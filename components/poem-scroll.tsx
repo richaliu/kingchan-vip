@@ -38,8 +38,18 @@ export function PoemScroll() {
           ))}
         </div>
 
+        {/* 作者署名 */}
+        <div className="mt-10 flex flex-col items-center gap-1 text-center">
+          <p className="text-base tracking-widest text-muted-foreground sm:text-lg">
+            缠中说禅
+          </p>
+          <p className="text-sm tracking-wide text-muted-foreground/80">
+            2006-02-01
+          </p>
+        </div>
+
         {/* 印章 */}
-        <footer className="mt-14 flex items-center gap-4">
+        <footer className="mt-10 flex items-center gap-4">
           <span className="h-px w-10 bg-border" aria-hidden="true" />
           <span
             className="flex h-12 w-12 items-center justify-center rounded-sm bg-accent font-brush text-lg text-accent-foreground shadow-sm"
