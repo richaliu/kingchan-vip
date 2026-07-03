@@ -53,6 +53,13 @@ export default function RootLayout({
 }>) {
   return (
     <html lang="zh-CN" className={`bg-background ${notoSerifSC.variable} ${maShanZheng.variable}`}>
+      <head>
+        <link rel="preconnect" href="https://cdn.jsdelivr.net" crossOrigin="anonymous" />
+        <link
+          rel="stylesheet"
+          href="https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css"
+        />
+      </head>
       <body className="font-serif antialiased">
         {children}
         {process.env.NODE_ENV === 'production' && <Analytics />}
