@@ -1,3 +1,5 @@
+import Link from "next/link"
+
 const LINES = [
   "浊水倾波三万里，愀然独坐孤峰。",
   "龙潜狮睡候飙风。",
@@ -48,16 +50,22 @@ export function PoemScroll() {
           </p>
         </div>
 
-        {/* 印章 */}
-        <footer className="mt-10 flex items-center gap-4">
-          <span className="h-px w-10 bg-border" aria-hidden="true" />
-          <span
-            className="flex h-12 w-12 items-center justify-center rounded-sm bg-accent font-brush text-lg text-accent-foreground shadow-sm"
-            aria-label="印章"
-          >
-            词
+        {/* 印章按钮：点击进入文章页 */}
+        <footer className="mt-10 flex flex-col items-center gap-3">
+          <div className="flex items-center gap-4">
+            <span className="h-px w-10 bg-border" aria-hidden="true" />
+            <Link
+              href="/article"
+              aria-label="阅读文章：神州自有中天日，万国衣冠舞九韶"
+              className="flex h-12 w-12 items-center justify-center rounded-sm bg-accent font-brush text-lg text-accent-foreground shadow-sm transition-transform duration-200 hover:scale-110 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-background"
+            >
+              词
+            </Link>
+            <span className="h-px w-10 bg-border" aria-hidden="true" />
+          </div>
+          <span className="text-xs tracking-widest text-muted-foreground/70">
+            点击印章 · 展卷读文
           </span>
-          <span className="h-px w-10 bg-border" aria-hidden="true" />
         </footer>
       </article>
     </main>
