@@ -33,7 +33,7 @@ export function PoemScroll() {
           {LINES.map((line, i) => (
             <p
               key={i}
-              className="text-center text-xl leading-relaxed tracking-wide text-foreground/90 sm:text-2xl md:text-3xl text-pretty"
+              className="font-kai text-center text-2xl leading-relaxed tracking-wide text-foreground/90 sm:text-3xl md:text-4xl text-pretty"
             >
               {line}
             </p>

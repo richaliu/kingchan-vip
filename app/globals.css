@@ -1,6 +1,7 @@
 @import 'tailwindcss';
 @import 'tw-animate-css';
 @import 'shadcn/tailwind.css';
+@import url('https://cdn.jsdelivr.net/npm/lxgw-wenkai-webfont@1.7.0/style.css');
 
 @custom-variant dark (&:is(.dark *));
 
@@ -38,6 +39,7 @@
   --color-background: var(--background);
   --font-serif: var(--font-serif-sc), 'Songti SC', 'SimSun', serif;
   --font-brush: var(--font-brush), 'STKaiti', 'KaiTi', serif;
+  --font-kai: 'LXGW WenKai', 'Kaiti SC', 'STKaiti', 'KaiTi', '楷体', serif;
   --radius-sm: calc(var(--radius) * 0.6);
   --radius-md: calc(var(--radius) * 0.8);
   --radius-lg: var(--radius);
