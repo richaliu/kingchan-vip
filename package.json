@@ -4,10 +4,9 @@
   "private": true,
   "scripts": {
     "dev": "next dev",
-      "buildCommand": "next build",
-
     "start": "next start",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "build": "next build"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",
