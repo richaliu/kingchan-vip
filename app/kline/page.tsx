@@ -96,11 +96,6 @@ export default function KlinePage() {
       Type: '历史K线图',
       Symbol: toSymbol(code),
       Windows: INDEX_WINDOWS,
-      Frame: [
-        { SplitCount: 3, StringFormat: 0, IsShowLeftText: false },
-        { SplitCount: 2, StringFormat: 0, IsShowLeftText: false },
-        { SplitCount: 2, StringFormat: 0, IsShowLeftText: false },
-      ],
       Listener: { KeyDown: true, Wheel: true },
       IsShowCorssCursorInfo: true,
       KLine: {
