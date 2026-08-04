@@ -21,7 +21,7 @@ export async function GET(req: NextRequest) {
   const qs = new URLSearchParams(params)
   try {
     const resp = await fetch(`${UPSTREAM}/api/kline?${qs}`, {
-      cache: 'no-store',
+      next: { revalidate: 60 },
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(15000),
     })
