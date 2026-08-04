@@ -1,6 +1,5 @@
 'use client'
 
-import Script from 'next/script'
 import { useCallback, useEffect, useRef, useState } from 'react'
 
 const PERIODS = [
@@ -27,6 +26,24 @@ export default function KlinePage() {
   const symbolRef = useRef(symbol)
   periodRef.current = period
   symbolRef.current = symbol
+
+  // 手动加载 HQChart 库（不用 next/script，避免加载时机问题）
+  useEffect(() => {
+    const w = window as any
+    if (w.JSChart) {
+      setLibReady(true)
+      return
+    }
+    const s = document.createElement('script')
+    s.src = '/hqchart/umychart.min.js'
+    s.onload = () => {
+      const ww = window as any
+      if (ww.JSChart) setLibReady(true)
+      else setErrMsg('图表库加载失败')
+    }
+    s.onerror = () => setErrMsg('图表库加载失败')
+    document.head.appendChild(s)
+  }, [])
 
   // 注册 HQChart 数据回调
   useEffect(() => {
@@ -122,17 +139,6 @@ export default function KlinePage() {
 
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', fontFamily: 'var(--font-serif-sc), serif' }}>
-      <Script
-        src="/hqchart/umychart.min.js"
-        strategy="afterInteractive"
-        onLoad={() => {
-          const w = window as any
-          if (w.JSChart) setLibReady(true)
-          else setErrMsg('图表库加载失败')
-        }}
-        onError={() => setErrMsg('图表库加载失败')}
-      />
-
       <h1 style={{ fontSize: 24, marginBottom: 16, textAlign: 'center' }}>K 线图</h1>
 
       {/* 搜索栏 */}
