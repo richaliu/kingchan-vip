@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>test</title></head>
+<body>
+<div id="k" style="width:800px;height:500px;border:1px solid #ccc"></div>
+<script src="/hqchart/umychart.min.js"></script>
+<script>
+window.onerror = function (msg) { document.title = 'JSERR:' + msg; };
+try {
+  if (typeof JSChart === 'undefined') { document.title = 'NO_JSChart'; }
+  else {
+    var option = { type: 'kline', symbol: { code: '600519', name: '600519' } };
+    var c = new JSChart(option, document.getElementById('k'));
+    c.Create();
+    document.title = 'OK_canvas=' + document.querySelectorAll('canvas').length;
+  }
+} catch (e) {
+  document.title = 'ERR:' + e.message;
+}
+</script>
+</body>
+</html>
