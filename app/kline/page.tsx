@@ -12,6 +12,13 @@ const PERIODS = [
   { key: '5m', label: '5分' },
 ]
 
+// A股代码 → HQChart symbol（带市场后缀）
+function toSymbol(code: string): string {
+  const c = String(code).trim()
+  if (/^(6|9|5)/.test(c)) return `${c}.sh`
+  return `${c}.sz`
+}
+
 export default function KlinePage() {
   const [symbol, setSymbol] = useState({ code: '600519', name: '600519' })
   const [period, setPeriod] = useState('daily')
@@ -27,28 +34,47 @@ export default function KlinePage() {
   periodRef.current = period
   symbolRef.current = symbol
 
-  // 手动加载 HQChart 库
+  // 依次加载 HQChart 核心 + 指标引擎
   useEffect(() => {
     const w = window as any
-    if (w.JSChart) {
+    if (w.JSChart && w.JSIndexScript) {
       setLibReady(true)
+      return
+    }
+    let coreLoaded = false
+    const loadCompiler = () => {
+      if (w.JSIndexScript) {
+        setLibReady(true)
+        return
+      }
+      const s2 = document.createElement('script')
+      s2.src = '/hqchart/umychart.complier.js'
+      s2.onload = () => {
+        if (w.JSChart && w.JSIndexScript) setLibReady(true)
+        else setErrMsg('指标引擎加载失败')
+      }
+      s2.onerror = () => setErrMsg('指标引擎加载失败')
+      document.head.appendChild(s2)
+    }
+    if (w.JSChart) {
+      coreLoaded = true
+      loadCompiler()
       return
     }
     const s = document.createElement('script')
     s.src = '/hqchart/umychart.min.js'
     s.onload = () => {
-      const ww = window as any
-      if (ww.JSChart) setLibReady(true)
-      else setErrMsg('图表库加载失败')
+      coreLoaded = true
+      loadCompiler()
     }
     s.onerror = () => setErrMsg('图表库加载失败')
     document.head.appendChild(s)
   }, [])
 
-  // 初始化/重建图表（新版 API：JSChart.Init + SetOption + NetworkFilter）
+  // 初始化/重建图表（HQChart 新版 API）
   const initChart = useCallback(() => {
     const w = window as any
-    if (!w.JSChart || !chartRef.current) return
+    if (!w.JSChart || !w.JSIndexScript || !chartRef.current) return
     try {
       chartObj.current?.Destroy?.()
     } catch {
@@ -57,26 +83,33 @@ export default function KlinePage() {
     try {
       const container = chartRef.current
       container.innerHTML = ''
+      const code = symbolRef.current.code
       const option = {
-        type: 'kline',
-        symbol: symbolRef.current,
-        isDrag: true,
-        isRightMenuEnable: false,
-        rate: { isShow: false },
+        Type: '历史K线图',
+        Symbol: toSymbol(code),
+        Windows: [{ Index: 'MA', Modify: false, Change: false }],
+        IsShowCorssCursorInfo: true,
+        KLine: {
+          Right: 0,
+          Period: 0,
+          MaxReqeustDataCount: 1000,
+          PageSize: 50,
+          IsShowTooltip: true,
+        },
         NetworkFilter: (data: any, callback: (d: any) => void) => {
           const cmd = data.Name || data.Request?.Command || ''
-          const code = data.Request?.Data?.symbol?.code || data.Request?.Data?.symbol || symbolRef.current.code
+          const reqCode = symbolRef.current.code
           const pd = periodRef.current
           if (cmd === 'KLineChartContainer::RequestHistoryData') {
             setLoading(true)
             setErrMsg('')
-            fetch(`/api/kline?code=${encodeURIComponent(code)}&period=${pd}&limit=1000`)
+            fetch(`/api/kline?code=${encodeURIComponent(reqCode)}&period=${pd}&limit=1000`)
               .then((r) => r.json())
               .then((d) => {
                 setLoading(false)
-                if (!d || d.error || !Array.isArray(d.data)) {
+                if (!d || d.error || !Array.isArray(d.data) || d.data.length === 0) {
                   setErrMsg(d?.error || '暂无数据')
-                  callback({ code: 0, data: [], Data: [], symbol: code, name: code })
+                  callback({ code: 0, data: [], Data: [], symbol: toSymbol(reqCode), name: reqCode })
                   return
                 }
                 const rows: any[] = []
@@ -96,24 +129,14 @@ export default function KlinePage() {
                   ])
                   yClose = x.close
                 })
-                const hq: any = { code: 0, data: rows, Data: rows, symbol: code, name: d.name || code }
-                callback(hq)
+                callback({ code: 0, data: rows, Data: rows, symbol: toSymbol(reqCode), name: d.name || reqCode })
               })
               .catch(() => {
                 setLoading(false)
                 setErrMsg('数据加载失败')
-                callback({ code: 0, data: [], Data: [], symbol: code, name: code })
+                callback({ code: 0, data: [], Data: [], symbol: toSymbol(reqCode), name: reqCode })
               })
           }
-        },
-        KLine: {
-          MaxReqeustDataCount: 1000,
-          isShowTitle: true,
-          isShowMenu: false,
-          isShowRight: false,
-          isInfoTipShow: true,
-          KLineTitle: { isShow: true },
-          Area: { isShow: true },
         },
       }
       chartObj.current = w.JSChart.Init(container)
