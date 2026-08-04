@@ -27,7 +27,7 @@ export default function KlinePage() {
   periodRef.current = period
   symbolRef.current = symbol
 
-  // 手动加载 HQChart 库（不用 next/script，避免加载时机问题）
+  // 手动加载 HQChart 库
   useEffect(() => {
     const w = window as any
     if (w.JSChart) {
@@ -45,47 +45,7 @@ export default function KlinePage() {
     document.head.appendChild(s)
   }, [])
 
-  // 注册 HQChart 数据回调
-  useEffect(() => {
-    if (!libReady) return
-    const w = window as any
-    w.JSRequest.KLine = (option: any, callback: (d: any) => void) => {
-      const code = option.symbol?.code || symbolRef.current.code
-      const pd = periodRef.current
-      setLoading(true)
-      setErrMsg('')
-      fetch(`/api/kline?code=${encodeURIComponent(code)}&period=${pd}&limit=1000`)
-        .then((r) => r.json())
-        .then((d) => {
-          setLoading(false)
-          if (!d || d.error || !Array.isArray(d.data) || d.data.length === 0) {
-            setErrMsg(d?.error || '暂无数据')
-            callback({ code, name: code, day: [] })
-            return
-          }
-          callback({
-            code: d.code || code,
-            name: d.name || code,
-            day: d.data.map((x: any) => ({
-              date: String(x.date).slice(0, 10),
-              open: x.open,
-              high: x.high,
-              low: x.low,
-              close: x.close,
-              vol: x.volume != null ? x.volume : x.vol,
-              amount: x.amount,
-            })),
-          })
-        })
-        .catch(() => {
-          setLoading(false)
-          setErrMsg('数据加载失败')
-          callback({ code, name: code, day: [] })
-        })
-    }
-  }, [libReady])
-
-  // 初始化/重建图表
+  // 初始化/重建图表（新版 API：JSChart.Init + SetOption + NetworkFilter）
   const initChart = useCallback(() => {
     const w = window as any
     if (!w.JSChart || !chartRef.current) return
@@ -96,13 +56,55 @@ export default function KlinePage() {
     }
     try {
       const container = chartRef.current
-      container.innerHTML = '' // 清空旧 canvas
+      container.innerHTML = ''
       const option = {
         type: 'kline',
         symbol: symbolRef.current,
         isDrag: true,
         isRightMenuEnable: false,
         rate: { isShow: false },
+        NetworkFilter: (data: any, callback: (d: any) => void) => {
+          const cmd = data.Request?.Command || ''
+          const code = data.Request?.Data?.symbol?.code || symbolRef.current.code
+          const pd = periodRef.current
+          if (cmd === 'KLineChartContainer::RequestHistoryData') {
+            setLoading(true)
+            setErrMsg('')
+            fetch(`/api/kline?code=${encodeURIComponent(code)}&period=${pd}&limit=1000`)
+              .then((r) => r.json())
+              .then((d) => {
+                setLoading(false)
+                if (!d || d.error || !Array.isArray(d.data)) {
+                  setErrMsg(d?.error || '暂无数据')
+                  callback({ code: 0, data: [], symbol: code, name: code })
+                  return
+                }
+                const hq: any = { code: 0, data: [], symbol: code, name: d.name || code }
+                let yClose: number | null = null
+                d.data.forEach((x: any) => {
+                  const dateNum = parseInt(String(x.date).replace(/-/g, ''), 10)
+                  hq.data.push([
+                    dateNum,
+                    yClose,
+                    x.open,
+                    x.high,
+                    x.low,
+                    x.close,
+                    x.volume != null ? x.volume : x.vol,
+                    x.amount,
+                    0,
+                  ])
+                  yClose = x.close
+                })
+                callback(hq)
+              })
+              .catch(() => {
+                setLoading(false)
+                setErrMsg('数据加载失败')
+                callback({ code: 0, data: [], symbol: code, name: code })
+              })
+          }
+        },
         KLine: {
           MaxReqeustDataCount: 1000,
           isShowTitle: true,
