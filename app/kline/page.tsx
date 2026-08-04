@@ -34,41 +34,34 @@ export default function KlinePage() {
   periodRef.current = period
   symbolRef.current = symbol
 
-  // 依次加载 HQChart 核心 + 指标引擎
+  // 依次加载 HQChart 全部模块（jquery→核心→编译器→指标库→风格）
   useEffect(() => {
     const w = window as any
+    const SCRIPTS = [
+      '/hqchart/jquery.min.js',
+      '/hqchart/umychart.min.js',
+      '/hqchart/umychart.complier.js',
+      '/hqchart/umychart.index.data.js',
+      '/hqchart/umychart.style.js',
+    ]
     if (w.JSChart && w.JSIndexScript) {
       setLibReady(true)
       return
     }
-    let coreLoaded = false
-    const loadCompiler = () => {
-      if (w.JSIndexScript) {
-        setLibReady(true)
+    let idx = 0
+    const loadNext = () => {
+      if (idx >= SCRIPTS.length) {
+        if (w.JSChart && w.JSIndexScript) setLibReady(true)
+        else setErrMsg('图表库加载失败')
         return
       }
-      const s2 = document.createElement('script')
-      s2.src = '/hqchart/umychart.complier.js'
-      s2.onload = () => {
-        if (w.JSChart && w.JSIndexScript) setLibReady(true)
-        else setErrMsg('指标引擎加载失败')
-      }
-      s2.onerror = () => setErrMsg('指标引擎加载失败')
-      document.head.appendChild(s2)
+      const s = document.createElement('script')
+      s.src = SCRIPTS[idx++]
+      s.onload = loadNext
+      s.onerror = () => setErrMsg('加载失败: ' + s.src)
+      document.head.appendChild(s)
     }
-    if (w.JSChart) {
-      coreLoaded = true
-      loadCompiler()
-      return
-    }
-    const s = document.createElement('script')
-    s.src = '/hqchart/umychart.min.js'
-    s.onload = () => {
-      coreLoaded = true
-      loadCompiler()
-    }
-    s.onerror = () => setErrMsg('图表库加载失败')
-    document.head.appendChild(s)
+    loadNext()
   }, [])
 
   // 初始化/重建图表（HQChart 新版 API）
