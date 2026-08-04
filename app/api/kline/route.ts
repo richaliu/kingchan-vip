@@ -14,14 +14,12 @@ export async function GET(req: NextRequest) {
 
   if (!code) return NextResponse.json({ error: 'code 必填' }, { status: 400 })
 
-  const params: Record<string, string> = { code, period, limit }
-  if (start) params.start = start
-  if (end) params.end = end
-  if (exact) params.exact = exact
-  const qs = new URLSearchParams(params)
+  const qs = new URLSearchParams({
+    code, period, limit, start, end, exact,
+  })
   try {
     const resp = await fetch(`${UPSTREAM}/api/kline?${qs}`, {
-      next: { revalidate: 60 },
+      cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(15000),
     })
