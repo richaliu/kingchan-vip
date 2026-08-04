@@ -19,6 +19,8 @@ export default function KlinePage() {
   const [query, setQuery] = useState('600519')
   const [candidates, setCandidates] = useState<any[]>([])
   const [libReady, setLibReady] = useState(false)
+  const [loading, setLoading] = useState(false)
+  const [errMsg, setErrMsg] = useState('')
   const chartRef = useRef<HTMLDivElement>(null)
   const chartObj = useRef<any>(null)
   const periodRef = useRef(period)
@@ -26,17 +28,21 @@ export default function KlinePage() {
   periodRef.current = period
   symbolRef.current = symbol
 
-  // 注册 HQChart 数据回调（周期/代码变化时用最新值）
+  // 注册 HQChart 数据回调
   useEffect(() => {
     if (!libReady) return
     const w = window as any
     w.JSRequest.KLine = (option: any, callback: (d: any) => void) => {
       const code = option.symbol?.code || symbolRef.current.code
       const pd = periodRef.current
-      fetch(`/api/kline?code=${encodeURIComponent(code)}&period=${pd}&limit=2500`)
+      setLoading(true)
+      setErrMsg('')
+      fetch(`/api/kline?code=${encodeURIComponent(code)}&period=${pd}&limit=1000`)
         .then((r) => r.json())
         .then((d) => {
-          if (!d || d.error || !Array.isArray(d.data)) {
+          setLoading(false)
+          if (!d || d.error || !Array.isArray(d.data) || d.data.length === 0) {
+            setErrMsg(d?.error || '暂无数据')
             callback({ code, name: code, day: [] })
             return
           }
@@ -54,7 +60,11 @@ export default function KlinePage() {
             })),
           })
         })
-        .catch(() => callback({ code, name: code, day: [] }))
+        .catch(() => {
+          setLoading(false)
+          setErrMsg('数据加载失败')
+          callback({ code, name: code, day: [] })
+        })
     }
   }, [libReady])
 
@@ -67,25 +77,27 @@ export default function KlinePage() {
     } catch {
       /* ignore */
     }
-    const option = {
-      type: 'kline',
-      symbol: symbolRef.current,
-      isDrag: true,
-      isRightMenuEnable: false,
-      rate: { isShow: false },
-      KLine: {
-        isShowTitle: true,
-        isShowMenu: false,
-        isShowRight: false,
-        isInfoTipShow: true,
-        KLineTitle: { isShow: true },
-        Area: {
-          isShow: true,
+    try {
+      const option = {
+        type: 'kline',
+        symbol: symbolRef.current,
+        isDrag: true,
+        isRightMenuEnable: false,
+        rate: { isShow: false },
+        KLine: {
+          isShowTitle: true,
+          isShowMenu: false,
+          isShowRight: false,
+          isInfoTipShow: true,
+          KLineTitle: { isShow: true },
+          Area: { isShow: true },
         },
-      },
+      }
+      chartObj.current = new w.JSChart(option, chartRef.current)
+      chartObj.current.Create()
+    } catch (e) {
+      setErrMsg('图表初始化失败: ' + String(e))
     }
-    chartObj.current = new w.JSChart(option, chartRef.current)
-    chartObj.current.Create()
   }, [])
 
   useEffect(() => {
@@ -113,9 +125,10 @@ export default function KlinePage() {
         onLoad={() => {
           const w = window as any
           if (w.JSChart) setLibReady(true)
+          else setErrMsg('图表库加载失败')
         }}
+        onError={() => setErrMsg('图表库加载失败')}
       />
-      <Script src="/hqchart/umychart.complier.js" strategy="afterInteractive" />
 
       <h1 style={{ fontSize: 24, marginBottom: 16, textAlign: 'center' }}>K 线图</h1>
 
@@ -174,6 +187,14 @@ export default function KlinePage() {
           ))}
         </span>
       </div>
+
+      {/* 状态提示 */}
+      {loading && <div style={{ textAlign: 'center', color: '#888', padding: 8 }}>数据加载中…</div>}
+      {errMsg && !loading && (
+        <div style={{ textAlign: 'center', color: '#c00', padding: 8, border: '1px solid #f0c0c0', borderRadius: 6, marginBottom: 8, background: '#fff8f8' }}>
+          ⚠️ {errMsg}
+        </div>
+      )}
 
       {/* 图表容器 */}
       <div
