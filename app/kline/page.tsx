@@ -62,7 +62,7 @@ export default function KlinePage() {
     const SCRIPTS = [
       '/hqchart/jquery.min.js',
       '/hqchart/umychart.network.js',
-      '/hqchart/umychart.min.js',
+      '/hqchart/umychart.full.js',
       '/hqchart/umychart.complier.js',
       '/hqchart/umychart.index.data.js',
       '/hqchart/umychart.style.js',
