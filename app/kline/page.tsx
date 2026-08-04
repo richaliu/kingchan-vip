@@ -78,6 +78,8 @@ export default function KlinePage() {
       /* ignore */
     }
     try {
+      const container = chartRef.current
+      container.innerHTML = '' // 清空旧 canvas
       const option = {
         type: 'kline',
         symbol: symbolRef.current,
@@ -85,6 +87,7 @@ export default function KlinePage() {
         isRightMenuEnable: false,
         rate: { isShow: false },
         KLine: {
+          MaxReqeustDataCount: 1000,
           isShowTitle: true,
           isShowMenu: false,
           isShowRight: false,
@@ -93,8 +96,8 @@ export default function KlinePage() {
           Area: { isShow: true },
         },
       }
-      chartObj.current = new w.JSChart(option, chartRef.current)
-      chartObj.current.Create()
+      chartObj.current = w.JSChart.Init(container)
+      chartObj.current.SetOption(option)
     } catch (e) {
       setErrMsg('图表初始化失败: ' + String(e))
     }
