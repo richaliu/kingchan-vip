@@ -9,9 +9,13 @@ window.onerror = function (msg) { document.title = 'JSERR:' + msg; };
 try {
   if (typeof JSChart === 'undefined') { document.title = 'NO_JSChart'; }
   else {
-    var option = { type: 'kline', symbol: { code: '600519', name: '600519' } };
-    var c = new JSChart(option, document.getElementById('k'));
-    c.Create();
+    var c = JSChart.Init(document.getElementById('k'));
+    var option = {
+      type: 'kline',
+      symbol: { code: '600519', name: '600519' },
+      KLine: { MaxReqeustDataCount: 1000 }
+    };
+    c.SetOption(option);
     document.title = 'OK_canvas=' + document.querySelectorAll('canvas').length;
   }
 } catch (e) {
