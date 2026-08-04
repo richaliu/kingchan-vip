@@ -19,6 +19,17 @@ function toSymbol(code: string): string {
   return `${c}.sz`
 }
 
+// 周期 → HQChart Period 枚举（0日 1周 2月 4分 5五分 7三十分 9季）
+const PERIOD_MAP: Record<string, number> = {
+  daily: 0,
+  '10d': 0,
+  weekly: 1,
+  monthly: 2,
+  quarterly: 9,
+  '30m': 7,
+  '5m': 5,
+}
+
 export default function KlinePage() {
   const [symbol, setSymbol] = useState({ code: '600519', name: '600519' })
   const [period, setPeriod] = useState('daily')
@@ -85,7 +96,7 @@ export default function KlinePage() {
         IsShowCorssCursorInfo: true,
         KLine: {
           Right: 0,
-          Period: 0,
+          Period: PERIOD_MAP[periodRef.current] ?? 0,
           MaxReqeustDataCount: 1000,
           PageSize: 50,
           IsShowTooltip: true,
@@ -94,7 +105,9 @@ export default function KlinePage() {
           const cmd = data.Name || data.Request?.Command || ''
           const reqCode = symbolRef.current.code
           const pd = periodRef.current
-          if (cmd === 'KLineChartContainer::RequestHistoryData') {
+          const isMinute = cmd === 'KLineChartContainer::ReqeustHistoryMinuteData'
+          const isDay = cmd === 'KLineChartContainer::RequestHistoryData'
+          if (isMinute || isDay) {
             setLoading(true)
             setErrMsg('')
             fetch(`/api/kline?code=${encodeURIComponent(reqCode)}&period=${pd}&limit=1000`)
@@ -109,7 +122,11 @@ export default function KlinePage() {
                 const rows: any[] = []
                 let yClose: number | null = null
                 d.data.forEach((x: any) => {
-                  const dateNum = parseInt(String(x.date).replace(/-/g, ''), 10)
+                  const dt = String(x.date)
+                  const dateNum = parseInt(dt.slice(0, 10).replace(/-/g, ''), 10)
+                  let tm = 0
+                  const m = dt.match(/(\d{2}):(\d{2})/)
+                  if (m) tm = parseInt(m[1], 10) * 100 + parseInt(m[2], 10)
                   rows.push([
                     dateNum,
                     yClose,
@@ -119,7 +136,7 @@ export default function KlinePage() {
                     x.close,
                     x.volume != null ? x.volume : x.vol,
                     x.amount,
-                    0,
+                    tm,
                   ])
                   yClose = x.close
                 })
