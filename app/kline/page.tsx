@@ -120,7 +120,7 @@ export default function KlinePage() {
   return (
     <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', fontFamily: 'var(--font-serif-sc), serif' }}>
       <Script
-        src="/hqchart/umychart.js"
+        src="/hqchart/umychart.min.js"
         strategy="afterInteractive"
         onLoad={() => {
           const w = window as any
