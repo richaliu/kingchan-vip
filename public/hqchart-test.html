@@ -6,6 +6,18 @@
 <script src="/hqchart/umychart.min.js"></script>
 <script>
 window.onerror = function (msg) { document.title = 'JSERR:' + msg; };
+// 注册数据回调
+JSRequest.KLine = function (option, callback) {
+  fetch('/api/kline?code=' + option.symbol.code + '&period=daily&limit=1000')
+    .then(function (r) { return r.json(); })
+    .then(function (d) {
+      var day = (d.data || []).map(function (x) {
+        return { date: String(x.date).slice(0, 10), open: x.open, high: x.high, low: x.low, close: x.close, vol: x.volume != null ? x.volume : x.vol, amount: x.amount };
+      });
+      callback({ code: d.code, name: d.name, day: day });
+    })
+    .catch(function () { callback({ code: '600519', name: '600519', day: [] }); });
+};
 try {
   if (typeof JSChart === 'undefined') { document.title = 'NO_JSChart'; }
   else {
@@ -16,7 +28,9 @@ try {
       KLine: { MaxReqeustDataCount: 1000 }
     };
     c.SetOption(option);
-    document.title = 'OK_canvas=' + document.querySelectorAll('canvas').length;
+    setTimeout(function () {
+      document.title = 'OK_canvas=' + document.querySelectorAll('canvas').length;
+    }, 3000);
   }
 } catch (e) {
   document.title = 'ERR:' + e.message;
