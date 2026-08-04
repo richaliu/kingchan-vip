@@ -64,8 +64,8 @@ export default function KlinePage() {
         isRightMenuEnable: false,
         rate: { isShow: false },
         NetworkFilter: (data: any, callback: (d: any) => void) => {
-          const cmd = data.Request?.Command || ''
-          const code = data.Request?.Data?.symbol?.code || symbolRef.current.code
+          const cmd = data.Name || data.Request?.Command || ''
+          const code = data.Request?.Data?.symbol?.code || data.Request?.Data?.symbol || symbolRef.current.code
           const pd = periodRef.current
           if (cmd === 'KLineChartContainer::RequestHistoryData') {
             setLoading(true)
@@ -76,14 +76,14 @@ export default function KlinePage() {
                 setLoading(false)
                 if (!d || d.error || !Array.isArray(d.data)) {
                   setErrMsg(d?.error || '暂无数据')
-                  callback({ code: 0, data: [], symbol: code, name: code })
+                  callback({ code: 0, data: [], Data: [], symbol: code, name: code })
                   return
                 }
-                const hq: any = { code: 0, data: [], symbol: code, name: d.name || code }
+                const rows: any[] = []
                 let yClose: number | null = null
                 d.data.forEach((x: any) => {
                   const dateNum = parseInt(String(x.date).replace(/-/g, ''), 10)
-                  hq.data.push([
+                  rows.push([
                     dateNum,
                     yClose,
                     x.open,
@@ -96,12 +96,13 @@ export default function KlinePage() {
                   ])
                   yClose = x.close
                 })
+                const hq: any = { code: 0, data: rows, Data: rows, symbol: code, name: d.name || code }
                 callback(hq)
               })
               .catch(() => {
                 setLoading(false)
                 setErrMsg('数据加载失败')
-                callback({ code: 0, data: [], symbol: code, name: code })
+                callback({ code: 0, data: [], Data: [], symbol: code, name: code })
               })
           }
         },
