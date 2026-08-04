@@ -2,14 +2,18 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-const PERIODS = [
-  { key: 'daily', label: '日K' },
-  { key: '10d', label: '10日' },
-  { key: 'weekly', label: '周K' },
-  { key: 'monthly', label: '月K' },
-  { key: 'quarterly', label: '季K' },
-  { key: '30m', label: '30分' },
-  { key: '5m', label: '5分' },
+// 默认自选列表（左侧选择框）
+const DEFAULT_STOCKS = [
+  { code: '600519', name: '贵州茅台' },
+  { code: '000001', name: '平安银行' },
+  { code: '300750', name: '宁德时代' },
+  { code: '601318', name: '中国平安' },
+  { code: '000858', name: '五粮液' },
+  { code: '002594', name: '比亚迪' },
+  { code: '600036', name: '招商银行' },
+  { code: '000651', name: '格力电器' },
+  { code: '601899', name: '紫金矿业' },
+  { code: '300059', name: '东方财富' },
 ]
 
 // A股代码 → HQChart symbol（带市场后缀）
@@ -19,10 +23,9 @@ function toSymbol(code: string): string {
   return `${c}.sz`
 }
 
-// 周期 → HQChart Period 枚举（0日 1周 2月 4分 5五分 7三十分 9季）
+// 周期 → HQChart Period 枚举（0日 1周 2月 9季 7三十分 5五分）
 const PERIOD_MAP: Record<string, number> = {
   daily: 0,
-  '10d': 0,
   weekly: 1,
   monthly: 2,
   quarterly: 9,
@@ -30,22 +33,30 @@ const PERIOD_MAP: Record<string, number> = {
   '5m': 5,
 }
 
+// HQChart 指标配置（主图 MA + 副图 MACD + 副图 VOL）
+const INDEX_WINDOWS = [
+  { Index: 'MA', Modify: false, Change: false },
+  { Index: 'MACD', Modify: false, Change: false },
+  { Index: 'VOL', Modify: false, Change: false },
+]
+
 export default function KlinePage() {
-  const [symbol, setSymbol] = useState({ code: '600519', name: '600519' })
-  const [period, setPeriod] = useState('daily')
-  const [query, setQuery] = useState('600519')
+  const [stockList, setStockList] = useState(DEFAULT_STOCKS)
+  const [selectedIdx, setSelectedIdx] = useState(0)
+  const symbol = stockList[selectedIdx] ?? DEFAULT_STOCKS[0]
+  const [query, setQuery] = useState('')
   const [candidates, setCandidates] = useState<any[]>([])
   const [libReady, setLibReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errMsg, setErrMsg] = useState('')
-  const chartRef = useRef<HTMLDivElement>(null)
-  const chartObj = useRef<any>(null)
-  const periodRef = useRef(period)
+  const weekRef = useRef<HTMLDivElement>(null)
+  const dayRef = useRef<HTMLDivElement>(null)
+  const chartWeek = useRef<any>(null)
+  const chartDay = useRef<any>(null)
   const symbolRef = useRef(symbol)
-  periodRef.current = period
   symbolRef.current = symbol
 
-  // 依次加载 HQChart 全部模块（jquery→核心→编译器→指标库→风格）
+  // 依次加载 HQChart 全部模块
   useEffect(() => {
     const w = window as any
     const SCRIPTS = [
@@ -76,180 +87,215 @@ export default function KlinePage() {
     loadNext()
   }, [])
 
-  // 初始化/重建图表（HQChart 新版 API）
-  const initChart = useCallback(() => {
+  // 构建单个图表
+  const makeChart = useCallback((container: HTMLDivElement, period: string): any => {
     const w = window as any
-    if (!w.JSChart || !w.JSIndexScript || !chartRef.current) return
-    try {
-      chartObj.current?.Destroy?.()
-    } catch {
-      /* ignore */
-    }
-    try {
-      const container = chartRef.current
-      container.innerHTML = ''
-      const code = symbolRef.current.code
-      const option = {
-        Type: '历史K线图',
-        Symbol: toSymbol(code),
-        Windows: [{ Index: 'MA', Modify: false, Change: false }],
-        IsShowCorssCursorInfo: true,
-        KLine: {
-          Right: 0,
-          Period: PERIOD_MAP[periodRef.current] ?? 0,
-          MaxReqeustDataCount: 1000,
-          PageSize: 50,
-          IsShowTooltip: true,
-        },
-        NetworkFilter: (data: any, callback: (d: any) => void) => {
-          const cmd = data.Name || data.Request?.Command || ''
-          const reqCode = symbolRef.current.code
-          const pd = periodRef.current
-          const isMinute = cmd === 'KLineChartContainer::ReqeustHistoryMinuteData'
-          const isDay = cmd === 'KLineChartContainer::RequestHistoryData'
-          if (isMinute || isDay) {
-            setLoading(true)
-            setErrMsg('')
-            fetch(`/api/kline?code=${encodeURIComponent(reqCode)}&period=${pd}&limit=1000`)
-              .then((r) => r.json())
-              .then((d) => {
-                setLoading(false)
-                if (!d || d.error || !Array.isArray(d.data) || d.data.length === 0) {
-                  setErrMsg(d?.error || '暂无数据')
-                  callback({ code: 0, data: [], Data: [], symbol: toSymbol(reqCode), name: reqCode })
-                  return
-                }
-                const rows: any[] = []
-                let yClose: number | null = null
-                d.data.forEach((x: any) => {
-                  const dt = String(x.date)
-                  const dateNum = parseInt(dt.slice(0, 10).replace(/-/g, ''), 10)
-                  let tm = 0
-                  const m = dt.match(/(\d{2}):(\d{2})/)
-                  if (m) tm = parseInt(m[1], 10) * 100 + parseInt(m[2], 10)
-                  rows.push([
-                    dateNum,
-                    yClose,
-                    x.open,
-                    x.high,
-                    x.low,
-                    x.close,
-                    x.volume != null ? x.volume : x.vol,
-                    x.amount,
-                    tm,
-                  ])
-                  yClose = x.close
-                })
-                callback({ code: 0, data: rows, Data: rows, symbol: toSymbol(reqCode), name: d.name || reqCode })
-              })
-              .catch(() => {
-                setLoading(false)
-                setErrMsg('数据加载失败')
+    const code = symbolRef.current.code
+    container.innerHTML = ''
+    const option = {
+      Type: '历史K线图',
+      Symbol: toSymbol(code),
+      Windows: INDEX_WINDOWS,
+      Frame: [
+        { SplitCount: 3, StringFormat: 0, IsShowLeftText: false },
+        { SplitCount: 2, StringFormat: 0, IsShowLeftText: false },
+        { SplitCount: 2, StringFormat: 0, IsShowLeftText: false },
+      ],
+      Listener: { KeyDown: true, Wheel: true },
+      IsShowCorssCursorInfo: true,
+      KLine: {
+        Right: 0,
+        Period: PERIOD_MAP[period] ?? 0,
+        MaxReqeustDataCount: 1000,
+        PageSize: 50,
+        IsShowTooltip: true,
+      },
+      NetworkFilter: (data: any, callback: (d: any) => void) => {
+        const cmd = data.Name || data.Request?.Command || ''
+        const reqCode = symbolRef.current.code
+        const isMinute = cmd === 'KLineChartContainer::ReqeustHistoryMinuteData'
+        const isDay = cmd === 'KLineChartContainer::RequestHistoryData'
+        if (isMinute || isDay) {
+          setLoading(true)
+          setErrMsg('')
+          fetch(`/api/kline?code=${encodeURIComponent(reqCode)}&period=${period}&limit=1000`)
+            .then((r) => r.json())
+            .then((d) => {
+              setLoading(false)
+              if (!d || d.error || !Array.isArray(d.data) || d.data.length === 0) {
                 callback({ code: 0, data: [], Data: [], symbol: toSymbol(reqCode), name: reqCode })
+                return
+              }
+              const rows: any[] = []
+              let yClose: number | null = null
+              d.data.forEach((x: any) => {
+                const dt = String(x.date)
+                const dateNum = parseInt(dt.slice(0, 10).replace(/-/g, ''), 10)
+                let tm = 0
+                const m = dt.match(/(\d{2}):(\d{2})/)
+                if (m) tm = parseInt(m[1], 10) * 100 + parseInt(m[2], 10)
+                rows.push([
+                  dateNum,
+                  yClose,
+                  x.open,
+                  x.high,
+                  x.low,
+                  x.close,
+                  x.volume != null ? x.volume : x.vol,
+                  x.amount,
+                  tm,
+                ])
+                yClose = x.close
               })
-          }
-        },
-      }
-      chartObj.current = w.JSChart.Init(container)
-      chartObj.current.SetOption(option)
-    } catch (e) {
-      setErrMsg('图表初始化失败: ' + String(e))
+              callback({ code: 0, data: rows, Data: rows, symbol: toSymbol(reqCode), name: d.name || reqCode })
+            })
+            .catch(() => {
+              setLoading(false)
+              setErrMsg('数据加载失败')
+              callback({ code: 0, data: [], Data: [], symbol: toSymbol(reqCode), name: reqCode })
+            })
+        }
+      },
+    }
+    const chart = w.JSChart.Init(container)
+    chart.SetOption(option)
+    return chart
+  }, [])
+
+  // 初始化双图（周K + 日K）
+  useEffect(() => {
+    if (!libReady) return
+    if (weekRef.current) chartWeek.current = makeChart(weekRef.current, 'weekly')
+    if (dayRef.current) chartDay.current = makeChart(dayRef.current, 'daily')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [libReady, symbol])
+
+  // 触控板手势：左右滑=平移（模拟键盘←→），上下滑=缩放（HQChart自带wheel）
+  const handleWheel = useCallback((e: WheelEvent) => {
+    e.preventDefault()
+    const container = e.currentTarget as HTMLDivElement
+    const canvas = container.querySelector('canvas')
+    if (!canvas) return
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY) && e.deltaX !== 0) {
+      const key = e.deltaX > 0 ? 'ArrowRight' : 'ArrowLeft'
+      canvas.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }))
     }
   }, [])
 
+  // 键盘 ↑↓ 切换左侧股票
   useEffect(() => {
-    if (libReady) initChart()
-  }, [libReady, initChart, symbol, period])
+    const h = (e: KeyboardEvent) => {
+      if (e.key === 'ArrowUp') setSelectedIdx((i) => Math.max(0, i - 1))
+      else if (e.key === 'ArrowDown') setSelectedIdx((i) => Math.min(stockList.length - 1, i + 1))
+    }
+    window.addEventListener('keydown', h)
+    return () => window.removeEventListener('keydown', h)
+  }, [stockList.length])
 
-  // 搜索
+  // 搜索（支持中文名/代码）
   const doSearch = useCallback((q: string) => {
-    if (!q.trim()) return
+    if (!q.trim()) {
+      setCandidates([])
+      return
+    }
     fetch(`/api/stocks?q=${encodeURIComponent(q.trim())}&limit=10`)
       .then((r) => r.json())
       .then((d) => setCandidates(Array.isArray(d.items) ? d.items : []))
   }, [])
 
-  const pick = (c: any) => {
-    setSymbol({ code: c.code, name: c.name || c.code })
+  // 选中股票（加入列表 + 高亮）
+  const pickStock = (c: any) => {
+    const code = String(c.code || c).trim()
+    const name = c.name || code
+    setStockList((prev) => {
+      const idx = prev.findIndex((x) => x.code === code)
+      if (idx >= 0) {
+        setSelectedIdx(idx)
+        return prev
+      }
+      setSelectedIdx(0)
+      return [{ code, name }, ...prev]
+    })
     setCandidates([])
+    setQuery('')
   }
 
   return (
-    <div style={{ maxWidth: 1200, margin: '0 auto', padding: '24px 16px', fontFamily: 'var(--font-serif-sc), serif' }}>
-      <h1 style={{ fontSize: 24, marginBottom: 16, textAlign: 'center' }}>K 线图</h1>
-
-      {/* 搜索栏 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', position: 'relative' }}>
+    <div style={{ display: 'flex', gap: 12, maxWidth: 1400, margin: '0 auto', padding: '16px', fontFamily: 'var(--font-serif-sc), serif' }}>
+      {/* 左侧选择框 */}
+      <div style={{ width: 230, flexShrink: 0, border: '1px solid #e5e5e5', borderRadius: 8, padding: 10, background: '#fff', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 15 }}>自选 / 搜索</div>
         <input
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
             doSearch(e.target.value)
           }}
-          onKeyDown={(e) => e.key === 'Enter' && doSearch(query)}
-          placeholder="输入代码或名称，如 600519"
-          style={{ flex: 1, padding: '8px 12px', fontSize: 15, border: '1px solid #ccc', borderRadius: 6 }}
+          placeholder="代码或中文名"
+          style={{ padding: '6px 10px', fontSize: 13, border: '1px solid #ccc', borderRadius: 6, marginBottom: 6 }}
         />
-        <button onClick={() => doSearch(query)} style={{ padding: '8px 16px', fontSize: 15, border: '1px solid #888', borderRadius: 6, background: '#f5f5f5', cursor: 'pointer' }}>
-          搜索
-        </button>
         {candidates.length > 0 && (
-          <div style={{ position: 'absolute', top: 44, left: 0, right: 0, background: '#fff', border: '1px solid #ddd', borderRadius: 6, zIndex: 10, maxHeight: 260, overflowY: 'auto', boxShadow: '0 4px 12px rgba(0,0,0,.12)' }}>
-            {candidates.map((c) => (
+          <div style={{ border: '1px solid #ddd', borderRadius: 6, marginBottom: 6, maxHeight: 180, overflowY: 'auto' }}>
+            {candidates.map((c, i) => (
               <div
-                key={`${c.code}-${c.period}`}
-                onClick={() => pick(c)}
-                style={{ padding: '8px 12px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 14 }}
+                key={`${c.code}-${i}`}
+                onClick={() => pickStock(c)}
+                style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
               >
-                <b>{c.code}</b> <span style={{ color: '#888' }}>{c.period} · {c.board}</span>
+                <b>{c.name}</b> <span style={{ color: '#999', fontSize: 12 }}>{c.code}</span>
               </div>
             ))}
           </div>
         )}
-      </div>
-
-      {/* 当前代码 + 周期切换 */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        <span style={{ fontSize: 17, fontWeight: 600 }}>
-          {symbol.code} {symbol.name !== symbol.code ? symbol.name : ''}
-        </span>
-        <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-          {PERIODS.map((p) => (
-            <button
-              key={p.key}
-              onClick={() => setPeriod(p.key)}
+        <div style={{ flex: 1, overflowY: 'auto' }}>
+          {stockList.map((s, i) => (
+            <div
+              key={s.code}
+              onClick={() => setSelectedIdx(i)}
               style={{
-                padding: '4px 10px',
-                fontSize: 14,
-                border: '1px solid #ccc',
-                borderRadius: 4,
+                padding: '7px 10px',
                 cursor: 'pointer',
-                background: period === p.key ? '#333' : '#fff',
-                color: period === p.key ? '#fff' : '#333',
+                borderRadius: 6,
+                marginBottom: 2,
+                fontSize: 13,
+                background: i === selectedIdx ? '#333' : 'transparent',
+                color: i === selectedIdx ? '#fff' : '#333',
               }}
             >
-              {p.label}
-            </button>
+              <b>{s.name}</b> <span style={{ opacity: 0.6, fontSize: 12 }}>{s.code}</span>
+            </div>
           ))}
-        </span>
+        </div>
+        <div style={{ marginTop: 6, color: '#999', fontSize: 11, textAlign: 'center' }}>
+          键盘 ↑↓ 切换 · 触控板左右滑=平移 上下滑=缩放
+        </div>
       </div>
 
-      {/* 状态提示 */}
-      {loading && <div style={{ textAlign: 'center', color: '#888', padding: 8 }}>数据加载中…</div>}
-      {errMsg && !loading && (
-        <div style={{ textAlign: 'center', color: '#c00', padding: 8, border: '1px solid #f0c0c0', borderRadius: 6, marginBottom: 8, background: '#fff8f8' }}>
-          ⚠️ {errMsg}
+      {/* 右侧图表区：周K + 日K */}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
+          {symbol.name} <b>{symbol.code}</b> · 周K / 日K（MACD + 成交量）
         </div>
-      )}
-
-      {/* 图表容器 */}
-      <div
-        ref={chartRef}
-        style={{ width: '100%', height: 560, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff' }}
-      />
-      <p style={{ marginTop: 8, color: '#999', fontSize: 12, textAlign: 'center' }}>
-        数据源：本地服务器股票数据库（日K/周K/月K/季K/10日/30分/5分）
-      </p>
+        {loading && <div style={{ textAlign: 'center', color: '#888', padding: 4, fontSize: 12 }}>数据加载中…</div>}
+        {errMsg && !loading && (
+          <div style={{ textAlign: 'center', color: '#c00', padding: 6, border: '1px solid #f0c0c0', borderRadius: 6, marginBottom: 6, background: '#fff8f8', fontSize: 13 }}>
+            ⚠️ {errMsg}
+          </div>
+        )}
+        <div
+          ref={weekRef}
+          onWheel={handleWheel}
+          style={{ width: '100%', height: 420, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff', marginBottom: 10 }}
+        />
+        <div
+          ref={dayRef}
+          onWheel={handleWheel}
+          style={{ width: '100%', height: 420, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff' }}
+        />
+        <p style={{ marginTop: 8, color: '#999', fontSize: 12, textAlign: 'center' }}>
+          数据源：本地服务器股票数据库 · MACD + 成交量副图 · 触控板手势：左右滑=滚动时间，上下滑=缩放
+        </p>
+      </div>
     </div>
   )
 }
