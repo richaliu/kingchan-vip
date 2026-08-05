@@ -2,7 +2,6 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 
-// 默认自选列表（左侧选择框）
 const DEFAULT_STOCKS = [
   { code: '600519', name: '贵州茅台' },
   { code: '000001', name: '平安银行' },
@@ -16,14 +15,27 @@ const DEFAULT_STOCKS = [
   { code: '300059', name: '东方财富' },
 ]
 
-// A股代码 → HQChart symbol（带市场后缀）
+const PERIODS = [
+  { key: 'daily', label: '日K' },
+  { key: 'weekly', label: '周K' },
+  { key: 'monthly', label: '月K' },
+  { key: 'quarterly', label: '季K' },
+  { key: '30m', label: '30分' },
+  { key: '5m', label: '5分' },
+]
+
+const INDEX_MODES = [
+  { key: 'macd', label: 'MACD' },
+  { key: 'vol', label: '成交量' },
+  { key: 'ma', label: '仅均线' },
+]
+
 function toSymbol(code: string): string {
   const c = String(code).trim()
   if (/^(6|9|5)/.test(c)) return `${c}.sh`
   return `${c}.sz`
 }
 
-// 周期 → HQChart Period 枚举（0日 1周 2月 9季 7三十分 5五分）
 const PERIOD_MAP: Record<string, number> = {
   daily: 0,
   weekly: 1,
@@ -33,12 +45,13 @@ const PERIOD_MAP: Record<string, number> = {
   '5m': 5,
 }
 
-// HQChart 指标配置（主图 MA + 副图 MACD + 副图 VOL）
-const INDEX_WINDOWS = [
-  { Index: 'MA', Modify: false, Change: false },
-  { Index: 'MACD', Modify: false, Change: false },
-  { Index: 'VOL', Modify: false, Change: false },
-]
+// 按指标模式生成副图配置
+function getWindows(mode: string) {
+  const base: any[] = [{ Index: 'MA', Modify: false, Change: false }]
+  if (mode === 'macd') base.push({ Index: 'MACD', Modify: false, Change: false })
+  if (mode === 'vol') base.push({ Index: 'VOL', Modify: false, Change: false })
+  return base
+}
 
 export default function KlinePage() {
   const [stockList, setStockList] = useState(DEFAULT_STOCKS)
@@ -49,14 +62,20 @@ export default function KlinePage() {
   const [libReady, setLibReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errMsg, setErrMsg] = useState('')
-  const weekRef = useRef<HTMLDivElement>(null)
-  const dayRef = useRef<HTMLDivElement>(null)
-  const chartWeek = useRef<any>(null)
-  const chartDay = useRef<any>(null)
+  // 上图默认日K+MACD，下图默认周K+成交量
+  const [periodTop, setPeriodTop] = useState('daily')
+  const [periodBottom, setPeriodBottom] = useState('weekly')
+  const [indexTop, setIndexTop] = useState('macd')
+  const [indexBottom, setIndexBottom] = useState('vol')
+
+  const topRef = useRef<HTMLDivElement>(null)
+  const bottomRef = useRef<HTMLDivElement>(null)
+  const chartTop = useRef<any>(null)
+  const chartBottom = useRef<any>(null)
   const symbolRef = useRef(symbol)
   symbolRef.current = symbol
 
-  // 依次加载 HQChart 全部模块
+  // 加载 HQChart 模块
   useEffect(() => {
     const w = window as any
     const SCRIPTS = [
@@ -88,14 +107,14 @@ export default function KlinePage() {
   }, [])
 
   // 构建单个图表
-  const makeChart = useCallback((container: HTMLDivElement, period: string): any => {
+  const makeChart = useCallback((container: HTMLDivElement, period: string, mode: string): any => {
     const w = window as any
     const code = symbolRef.current.code
     container.innerHTML = ''
     const option = {
       Type: '历史K线图',
       Symbol: toSymbol(code),
-      Windows: INDEX_WINDOWS,
+      Windows: getWindows(mode),
       Listener: { KeyDown: true, Wheel: true },
       IsShowCorssCursorInfo: true,
       KLine: {
@@ -157,15 +176,15 @@ export default function KlinePage() {
     return chart
   }, [])
 
-  // 初始化双图（周K + 日K）
+  // 双图重建（上图=日K, 下图=周K；周期/指标各自独立）
   useEffect(() => {
     if (!libReady) return
-    if (weekRef.current) chartWeek.current = makeChart(weekRef.current, 'weekly')
-    if (dayRef.current) chartDay.current = makeChart(dayRef.current, 'daily')
+    if (topRef.current) chartTop.current = makeChart(topRef.current, periodTop, indexTop)
+    if (bottomRef.current) chartBottom.current = makeChart(bottomRef.current, periodBottom, indexBottom)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [libReady, symbol])
+  }, [libReady, symbol, periodTop, periodBottom, indexTop, indexBottom])
 
-  // 触控板手势：左右滑=平移（模拟键盘←→），上下滑=缩放（HQChart自带wheel）
+  // 触控板手势
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
     const container = e.currentTarget as HTMLDivElement
@@ -177,7 +196,7 @@ export default function KlinePage() {
     }
   }, [])
 
-  // 键盘 ↑↓ 切换左侧股票
+  // 键盘 ↑↓ 切换股票
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'ArrowUp') setSelectedIdx((i) => Math.max(0, i - 1))
@@ -187,18 +206,27 @@ export default function KlinePage() {
     return () => window.removeEventListener('keydown', h)
   }, [stockList.length])
 
-  // 搜索（支持中文名/代码）
+  // 搜索（按 code 去重）
   const doSearch = useCallback((q: string) => {
     if (!q.trim()) {
       setCandidates([])
       return
     }
-    fetch(`/api/stocks?q=${encodeURIComponent(q.trim())}&limit=10`)
+    fetch(`/api/stocks?q=${encodeURIComponent(q.trim())}&limit=20`)
       .then((r) => r.json())
-      .then((d) => setCandidates(Array.isArray(d.items) ? d.items : []))
+      .then((d) => {
+        const seen = new Set<string>()
+        const uniq: any[] = []
+        ;(Array.isArray(d.items) ? d.items : []).forEach((i: any) => {
+          if (!seen.has(i.code)) {
+            seen.add(i.code)
+            uniq.push(i)
+          }
+        })
+        setCandidates(uniq)
+      })
   }, [])
 
-  // 选中股票（加入列表 + 高亮）
   const pickStock = (c: any) => {
     const code = String(c.code || c).trim()
     const name = c.name || code
@@ -215,29 +243,91 @@ export default function KlinePage() {
     setQuery('')
   }
 
+  // 渲染单个图表块（标题+周期按钮+指标切换+图）
+  const renderChartBlock = (
+    title: string,
+    period: string,
+    setPeriod: (k: string) => void,
+    mode: string,
+    setMode: (k: string) => void,
+    chartRef: React.RefObject<HTMLDivElement | null>,
+    height: number,
+  ) => (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4, flexWrap: 'wrap' }}>
+        <span style={{ fontSize: 13, fontWeight: 600 }}>
+          {title} · {symbol.name} {symbol.code}
+        </span>
+        <span style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+          {PERIODS.map((p) => (
+            <button
+              key={p.key}
+              onClick={() => setPeriod(p.key)}
+              style={{
+                padding: '2px 8px',
+                fontSize: 12,
+                border: '1px solid #ccc',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: period === p.key ? '#333' : '#fff',
+                color: period === p.key ? '#fff' : '#333',
+              }}
+            >
+              {p.label}
+            </button>
+          ))}
+        </span>
+        <span style={{ display: 'flex', gap: 4 }}>
+          {INDEX_MODES.map((m) => (
+            <button
+              key={m.key}
+              onClick={() => setMode(m.key)}
+              style={{
+                padding: '2px 8px',
+                fontSize: 12,
+                border: '1px solid #999',
+                borderRadius: 4,
+                cursor: 'pointer',
+                background: mode === m.key ? '#8b4513' : '#fff',
+                color: mode === m.key ? '#fff' : '#666',
+              }}
+            >
+              {m.label}
+            </button>
+          ))}
+        </span>
+      </div>
+      <div
+        ref={chartRef}
+        onWheel={handleWheel}
+        style={{ width: '100%', height, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff' }}
+      />
+    </div>
+  )
+
   return (
-    <div style={{ display: 'flex', gap: 12, maxWidth: 1400, margin: '0 auto', padding: '16px', fontFamily: 'var(--font-serif-sc), serif' }}>
-      {/* 左侧选择框 */}
-      <div style={{ width: 230, flexShrink: 0, border: '1px solid #e5e5e5', borderRadius: 8, padding: 10, background: '#fff', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontWeight: 600, marginBottom: 8, fontSize: 15 }}>自选 / 搜索</div>
+    <div style={{ display: 'flex', gap: 10, maxWidth: 1400, margin: '0 auto', padding: '14px', fontFamily: 'var(--font-serif-sc), serif' }}>
+      {/* 左侧窄选择框 */}
+      <div style={{ width: 150, flexShrink: 0, border: '1px solid #e5e5e5', borderRadius: 8, padding: 8, background: '#fff', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>自选</div>
         <input
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
             doSearch(e.target.value)
           }}
-          placeholder="代码或中文名"
-          style={{ padding: '6px 10px', fontSize: 13, border: '1px solid #ccc', borderRadius: 6, marginBottom: 6 }}
+          placeholder="代码/名称"
+          style={{ padding: '5px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 6, marginBottom: 6 }}
         />
         {candidates.length > 0 && (
-          <div style={{ border: '1px solid #ddd', borderRadius: 6, marginBottom: 6, maxHeight: 180, overflowY: 'auto' }}>
-            {candidates.map((c, i) => (
+          <div style={{ border: '1px solid #ddd', borderRadius: 6, marginBottom: 6, maxHeight: 150, overflowY: 'auto' }}>
+            {candidates.map((c) => (
               <div
-                key={`${c.code}-${i}`}
+                key={c.code}
                 onClick={() => pickStock(c)}
-                style={{ padding: '6px 10px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 13 }}
+                style={{ padding: '5px 8px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 12 }}
               >
-                <b>{c.name}</b> <span style={{ color: '#999', fontSize: 12 }}>{c.code}</span>
+                <b>{c.name}</b> <span style={{ color: '#999', fontSize: 11 }}>{c.code}</span>
               </div>
             ))}
           </div>
@@ -248,47 +338,34 @@ export default function KlinePage() {
               key={s.code}
               onClick={() => setSelectedIdx(i)}
               style={{
-                padding: '7px 10px',
+                padding: '5px 8px',
                 cursor: 'pointer',
-                borderRadius: 6,
-                marginBottom: 2,
-                fontSize: 13,
+                borderRadius: 5,
+                marginBottom: 1,
+                fontSize: 12,
                 background: i === selectedIdx ? '#333' : 'transparent',
                 color: i === selectedIdx ? '#fff' : '#333',
               }}
             >
-              <b>{s.name}</b> <span style={{ opacity: 0.6, fontSize: 12 }}>{s.code}</span>
+              <b>{s.name}</b> <span style={{ opacity: 0.6, fontSize: 11 }}>{s.code}</span>
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 6, color: '#999', fontSize: 11, textAlign: 'center' }}>
-          键盘 ↑↓ 切换 · 触控板左右滑=平移 上下滑=缩放
-        </div>
+        <div style={{ marginTop: 4, color: '#999', fontSize: 10, textAlign: 'center' }}>↑↓切换 · 触控板滑</div>
       </div>
 
-      {/* 右侧图表区：周K + 日K */}
+      {/* 右侧图表区：上图=日K（默认），下图=周K（默认） */}
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 13, color: '#666', marginBottom: 4 }}>
-          {symbol.name} <b>{symbol.code}</b> · 周K / 日K（MACD + 成交量）
-        </div>
         {loading && <div style={{ textAlign: 'center', color: '#888', padding: 4, fontSize: 12 }}>数据加载中…</div>}
         {errMsg && !loading && (
           <div style={{ textAlign: 'center', color: '#c00', padding: 6, border: '1px solid #f0c0c0', borderRadius: 6, marginBottom: 6, background: '#fff8f8', fontSize: 13 }}>
             ⚠️ {errMsg}
           </div>
         )}
-        <div
-          ref={weekRef}
-          onWheel={handleWheel}
-          style={{ width: '100%', height: 420, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff', marginBottom: 10 }}
-        />
-        <div
-          ref={dayRef}
-          onWheel={handleWheel}
-          style={{ width: '100%', height: 420, border: '1px solid #e5e5e5', borderRadius: 8, background: '#fff' }}
-        />
-        <p style={{ marginTop: 8, color: '#999', fontSize: 12, textAlign: 'center' }}>
-          数据源：本地服务器股票数据库 · MACD + 成交量副图 · 触控板手势：左右滑=滚动时间，上下滑=缩放
+        {renderChartBlock('日K', periodTop, setPeriodTop, indexTop, setIndexTop, topRef, 400)}
+        {renderChartBlock('周K', periodBottom, setPeriodBottom, indexBottom, setIndexBottom, bottomRef, 400)}
+        <p style={{ marginTop: 6, color: '#999', fontSize: 12, textAlign: 'center' }}>
+          两图独立切换周期与指标 · 触控板左右滑=滚动时间 上下滑=缩放
         </p>
       </div>
     </div>
