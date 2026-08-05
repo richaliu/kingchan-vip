@@ -42,7 +42,7 @@ export default function ReplayPage() {
     const w = window as any
     if (w.echarts) { ecReady.current = true; loadData(); return }
     const s = document.createElement('script')
-    s.src = 'https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js'
+    s.src = 'https://registry.npmmirror.com/echarts/5.5.0/files/dist/echarts.min.js'
     s.onload = () => { ecReady.current = true; loadData() }
     document.head.appendChild(s)
   }, [])
