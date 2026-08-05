@@ -15,19 +15,6 @@ const DEFAULT_STOCKS = [
   { code: '300059', name: '东方财富' },
 ]
 
-const DEFAULT_CONCEPTS = [
-  { code: '885311', name: '智能电网' },
-  { code: '885312', name: '物联网' },
-  { code: '885333', name: '移动支付' },
-  { code: '885338', name: '融资融券' },
-  { code: '885343', name: '稀土永磁' },
-  { code: '885353', name: '白酒' },
-  { code: '885359', name: '锂电池' },
-  { code: '885362', name: '新能源车' },
-  { code: '885390', name: '半导体' },
-  { code: '885409', name: '人工智能' },
-]
-
 const PERIODS = [
   { key: 'daily', label: '日K' },
   { key: 'weekly', label: '周K' },
@@ -43,7 +30,6 @@ const INDEX_MODES = [
   { key: 'ma', label: '仅均线' },
 ]
 
-// 个股带市场后缀；概念/指数（88/BK 开头）不加后缀
 function toSymbol(code: string): string {
   const c = String(code).trim()
   if (/^(6|9|5)/.test(c)) return `${c}.sh`
@@ -70,6 +56,8 @@ function getWindows(mode: string) {
 export default function KlinePage() {
   const [tab, setTab] = useState<'stock' | 'concept'>('stock')
   const [list, setList] = useState<any[]>(DEFAULT_STOCKS)
+  const [boards, setBoards] = useState<any[]>([])
+  const [curBoard, setCurBoard] = useState<any>(null)
   const [selectedIdx, setSelectedIdx] = useState(0)
   const symbol = list[selectedIdx] ?? DEFAULT_STOCKS[0]
   const [query, setQuery] = useState('')
@@ -89,7 +77,6 @@ export default function KlinePage() {
   const symbolRef = useRef(symbol)
   symbolRef.current = symbol
 
-  // 加载 HQChart 模块
   useEffect(() => {
     const w = window as any
     const SCRIPTS = [
@@ -120,7 +107,6 @@ export default function KlinePage() {
     loadNext()
   }, [])
 
-  // 构建单个图表
   const makeChart = useCallback((container: HTMLDivElement, period: string, mode: string): any => {
     const w = window as any
     const code = symbolRef.current.code
@@ -221,11 +207,49 @@ export default function KlinePage() {
     return () => window.removeEventListener('keydown', h)
   }, [list.length])
 
-  // 搜索（个股 /api/stocks，概念 /api/concepts）
+  const loadConcepts = useCallback((q: string) => {
+    fetch(`/api/concepts${q ? '?q=' + encodeURIComponent(q) : '?limit=40'}`)
+      .then((r) => r.json())
+      .then((d) => {
+        const items = Array.isArray(d.rows)
+          ? d.rows.map((r: any) => ({ code: r.board_code, name: r.board_name, count: r.stock_count }))
+          : []
+        setBoards(items)
+        if (!curBoard) setList(items.length ? items : DEFAULT_STOCKS)
+      })
+  }, [curBoard])
+
+  const openBoard = (b: any) => {
+    setCurBoard(b)
+    setErrMsg('')
+    fetch(`/api/board_stocks?board_code=${encodeURIComponent(b.code)}`)
+      .then((r) => r.json())
+      .then((d) => {
+        if (Array.isArray(d.rows) && d.rows.length) {
+          setList(d.rows.map((r: any) => ({ code: r.code, name: r.name || r.code })))
+          setSelectedIdx(0)
+        } else {
+          setErrMsg('板块无成分股数据')
+          setCurBoard(null)
+        }
+      })
+      .catch(() => {
+        setErrMsg('成分股加载失败')
+        setCurBoard(null)
+      })
+  }
+
+  const backToBoards = () => {
+    setCurBoard(null)
+    setList(boards.length ? boards : DEFAULT_STOCKS)
+    setSelectedIdx(0)
+  }
+
   const doSearch = useCallback(
     (q: string) => {
       if (!q.trim()) {
         setCandidates([])
+        if (tab === 'concept') loadConcepts('')
         return
       }
       const url = tab === 'concept' ? `/api/concepts?q=${encodeURIComponent(q.trim())}&limit=10` : `/api/stocks?q=${encodeURIComponent(q.trim())}&limit=20`
@@ -233,10 +257,11 @@ export default function KlinePage() {
         .then((r) => r.json())
         .then((d) => {
           if (tab === 'concept') {
-            const items = Array.isArray(d.rows)
-              ? d.rows.map((r: any) => ({ code: r.board_code, name: r.board_name }))
-              : []
-            setCandidates(items)
+            setCandidates(
+              Array.isArray(d.rows)
+                ? d.rows.map((r: any) => ({ code: r.board_code, name: r.board_name, count: r.stock_count }))
+                : [],
+            )
           } else {
             const seen = new Set<string>()
             const uniq: any[] = []
@@ -250,31 +275,42 @@ export default function KlinePage() {
           }
         })
     },
-    [tab],
+    [tab, loadConcepts],
   )
 
   const pick = (c: any) => {
-    const code = String(c.code || c).trim()
-    const name = c.name || code
-    setList((prev) => {
-      const idx = prev.findIndex((x) => x.code === code)
-      if (idx >= 0) {
-        setSelectedIdx(idx)
-        return prev
-      }
-      setSelectedIdx(0)
-      return [{ code, name }, ...prev]
-    })
+    if (tab === 'concept') {
+      openBoard(c)
+    } else {
+      const code = String(c.code || c).trim()
+      const name = c.name || code
+      setList((prev) => {
+        const idx = prev.findIndex((x) => x.code === code)
+        if (idx >= 0) {
+          setSelectedIdx(idx)
+          return prev
+        }
+        setSelectedIdx(0)
+        return [{ code, name }, ...prev]
+      })
+    }
     setCandidates([])
     setQuery('')
   }
 
   const switchTab = (t: 'stock' | 'concept') => {
     setTab(t)
-    setList(t === 'stock' ? DEFAULT_STOCKS : DEFAULT_CONCEPTS)
-    setSelectedIdx(0)
+    setCurBoard(null)
     setCandidates([])
     setQuery('')
+    if (t === 'stock') {
+      setList(DEFAULT_STOCKS)
+      setSelectedIdx(0)
+    } else {
+      setList(DEFAULT_STOCKS)
+      loadConcepts('')
+      setSelectedIdx(0)
+    }
   }
 
   const renderChartBlock = (
@@ -395,11 +431,19 @@ export default function KlinePage() {
             ))}
           </div>
         )}
+        {curBoard && (
+          <div
+            onClick={backToBoards}
+            style={{ padding: '5px 8px', cursor: 'pointer', borderRadius: 5, marginBottom: 4, background: '#f5f2ea', fontSize: 12, color: '#8b4513', fontWeight: 600 }}
+          >
+            ← {curBoard.name}
+          </div>
+        )}
         <div style={{ flex: 1, overflowY: 'auto' }}>
           {list.map((s, i) => (
             <div
               key={s.code}
-              onClick={() => setSelectedIdx(i)}
+              onClick={() => (tab === 'concept' && !curBoard ? openBoard(s) : setSelectedIdx(i))}
               style={{
                 padding: '5px 8px',
                 cursor: 'pointer',
@@ -411,10 +455,13 @@ export default function KlinePage() {
               }}
             >
               <b>{s.name}</b> <span style={{ opacity: 0.6, fontSize: 11 }}>{s.code}</span>
+              {'count' in s && <span style={{ opacity: 0.5, fontSize: 10, marginLeft: 2 }}>{s.count}股</span>}
             </div>
           ))}
         </div>
-        <div style={{ marginTop: 4, color: '#999', fontSize: 10, textAlign: 'center' }}>↑↓切换 · 触控板滑</div>
+        <div style={{ marginTop: 4, color: '#999', fontSize: 10, textAlign: 'center' }}>
+          {tab === 'concept' && !curBoard ? '点概念看成分股' : '↑↓切换 · 触控板滑'}
+        </div>
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
@@ -427,7 +474,7 @@ export default function KlinePage() {
         {renderChartBlock('日K', periodTop, setPeriodTop, indexTop, setIndexTop, topRef, 400)}
         {renderChartBlock('周K', periodBottom, setPeriodBottom, indexBottom, setIndexBottom, bottomRef, 400)}
         <p style={{ marginTop: 6, color: '#999', fontSize: 12, textAlign: 'center' }}>
-          {tab === 'concept' ? '概念指数 K 线（同花顺 885 系列）' : '个股 K 线（PostgreSQL 数据源）'} · 触控板左右滑=滚动时间 上下滑=缩放
+          {tab === 'concept' ? `概念 ${curBoard ? curBoard.name : '浏览'} → 成分股 K 线（PostgreSQL）` : '个股 K 线（PostgreSQL 2000 年起全史）'} · 触控板左右滑=滚动 上下滑=缩放
         </p>
       </div>
     </div>
