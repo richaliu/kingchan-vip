@@ -128,7 +128,7 @@ export default function CapitalPage() {
                       <td style={td}>{Number(r.turnover).toFixed(2)}%</td>
                       <td style={{ ...td, color: Number(r.netamount) >= 0 ? '#c00' : '#0a8' }}>{fmtMoney(r.netamount)}</td>
                       <td style={{ ...td, color: Number(r.main_net) >= 0 ? '#c00' : '#0a8', fontWeight: 600 }}>{fmtMoney(r.main_net)}</td>
-                      <td style={{ ...td, color: Number(r.main_ratio) >= 0 ? '#c00' : '#0a8' }}>{fmtPct(r.main_ratio)}</td>
+                      <td style={{ ...td, color: Number(r.main_ratio) >= 0 ? '#c00' : '#0a8' }}>{Number(r.main_ratio).toFixed(2)}%</td>
                     </tr>
                   ))}
                 </tbody>
