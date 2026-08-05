@@ -157,6 +157,8 @@ export default function ReplayPage() {
   const [stock, setStock] = useState<any>(null)
   const [stockCode, setStockCode] = useState('600519')
   const [loading, setLoading] = useState(false)
+  const [l1Index, setL1Index] = useState('sh000001')   // 大盘方向：指数
+  const [l1Period, setL1Period] = useState('weekly')    // 大盘方向：周期 weekly|daily
   const ecReady = useRef(false)
   const chartRefs = useRef<Record<string, any>>({})
 
@@ -185,9 +187,11 @@ export default function ReplayPage() {
       .catch(() => setLoading(false))
   }
 
-  // ===================== Layer 1: 大盘周线方向 =====================
+  // ===================== Layer 1: 大盘方向图表 =====================
   useEffect(() => {
-    if (layer !== 'l1' || !macro?.index_weekly?.length || !ecReady.current) return
+    if (layer !== 'l1' || !ecReady.current) return
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return
     const el = document.getElementById('chart-l1')
     if (!el) return
     const ec = (window as any).echarts
@@ -195,24 +199,25 @@ export default function ReplayPage() {
     const dom = ec.init(el!, 'dark')
     chartRefs.current.l1 = dom
 
-    // 只看上证周线
-    const sh = (macro.index_weekly || []).filter((r: any) => r.code === 'sh000001').sort((a: any, b: any) => String(a.d).localeCompare(String(b.d))).slice(-52)
-    const dates = sh.map((r: any) => String(r.d).slice(0, 10))
-    const closes = sh.map((r: any) => Number(r.close))
-    const vols = sh.map((r: any) => Number(r.volume || 0) / 1e8)
+    const idxInfo = INDICES[l1Index] || { name: l1Index, color: '#999' }
+    const limit = l1Period === 'weekly' ? 52 : 90
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d))).slice(-limit)
+    const dates = raw.map((r: any) => String(r.d).slice(0, l1Period === 'weekly' ? 10 : 10))
+    const closes = raw.map((r: any) => Number(r.close))
+    const vols = raw.map((r: any) => Number(r.volume || 0) / 1e8)
 
-    // MA5/MA10/MA20
     const ma5 = calcMA(closes, 5)
     const ma10 = calcMA(closes, 10)
     const ma20 = calcMA(closes, 20)
     const maColors = ['#f59e0b', '#06b6d4', '#a78bfa']
     const maLabels = ['MA5', 'MA10', 'MA20']
+    const periodLabel = l1Period === 'weekly' ? '周' : '日'
 
     dom.setOption({
       backgroundColor: C.bg,
-      title: { text: '上证周线（52周）', textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
+      title: { text: `${idxInfo.name}${periodLabel}线（${limit}${periodLabel}）`, textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
       tooltip: { trigger: 'axis' },
-      legend: { data: ['上证收盘', ...maLabels, '周量'], textStyle: { color: '#aaa' }, bottom: 0 },
+      legend: { data: [`${idxInfo.name}收盘`, ...maLabels, `${periodLabel}量`], textStyle: { color: '#aaa' }, bottom: 0 },
       grid: [
         { top: 35, left: 55, right: 15, bottom: 40, height: '60%' },
         { top: '78%', left: 55, right: 15, height: '15%' },
@@ -226,27 +231,28 @@ export default function ReplayPage() {
         { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 1 },
       ],
       series: [
-        { name: '上证收盘', type: 'line', data: closes.map((v: number, i: number) => [dates[i], v]), smooth: true, symbol: 'none',
-          lineStyle: { color: '#ef4444', width: 2 } },
+        { name: `${idxInfo.name}收盘`, type: 'line', data: closes.map((v: number, i: number) => [dates[i], v]), smooth: true, symbol: 'none',
+          lineStyle: { color: idxInfo.color, width: 2 } },
         ...[ma5, ma10, ma20].map((ma: (number | null)[], i: number) => ({
           name: maLabels[i], type: 'line' as const,
           data: ma.map((v, j) => v != null ? [dates[j], v] : null).filter(Boolean),
           symbol: 'none', lineStyle: { color: maColors[i], width: 1, type: 'dashed' as const },
         })),
-        { name: '周量', type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+        { name: `${periodLabel}量`, type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
           data: dates.map((d: string, i: number) => [d, vols[i]]),
           itemStyle: { color: vols.map((v: number) => v > (vols.reduce((a: number, b: number) => a + b, 0) / vols.length) * 1.5 ? '#f59e0b44' : '#1e293b') } },
       ],
     })
     return () => dom.dispose()
-  }, [layer, macro])
+  }, [layer, macro, l1Index, l1Period])
 
-  // 均线排列计算
+  // 均线排列计算（基于选中的指数+周期）
   const maArrangement = (() => {
-    if (!macro?.index_weekly?.length) return { text: '数据加载中', color: C.muted }
-    const sh = macro.index_weekly.filter((r: any) => r.code === 'sh000001').sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
-    if (sh.length < 20) return { text: '数据不足', color: C.muted }
-    const closes = sh.map((r: any) => Number(r.close))
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return { text: '数据加载中', color: C.muted }
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
+    if (raw.length < 20) return { text: '数据不足', color: C.muted }
+    const closes = raw.map((r: any) => Number(r.close))
     const m5 = closes.slice(-5).reduce((a: number, b: number) => a + b, 0) / 5
     const m10 = closes.slice(-10).reduce((a: number, b: number) => a + b, 0) / 10
     const m20 = closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20
@@ -255,13 +261,14 @@ export default function ReplayPage() {
     return { text: '缠绕震荡 ↔', color: C.amber }
   })()
 
-  // 周线量能判断
+  // 量能判断（基于选中的指数+周期）
   const volStatus = (() => {
-    if (!macro?.index_weekly?.length) return { text: '—', color: C.muted }
-    const sh = macro.index_weekly.filter((r: any) => r.code === 'sh000001').sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
-    if (sh.length < 5) return { text: '—', color: C.muted }
-    const recent2 = sh.slice(-2)
-    const prev3 = sh.slice(-5, -2)
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return { text: '—', color: C.muted }
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
+    if (raw.length < 5) return { text: '—', color: C.muted }
+    const recent2 = raw.slice(-2)
+    const prev3 = raw.slice(-5, -2)
     const avgR2 = recent2.reduce((s: number, r: any) => s + Number(r.volume || 0), 0) / 2
     const avgP3 = prev3.reduce((s: number, r: any) => s + Number(r.volume || 0), 0) / 3
     if (avgR2 > avgP3 * 1.5) {
@@ -552,10 +559,31 @@ export default function ReplayPage() {
       {/* ========= Layer 1: 大盘方向 ========= */}
       {layer === 'l1' && (
         <div style={{ padding: 20 }}>
+          {/* 指数切换 + 周期切换 */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: C.muted, marginRight: 4 }}>指数：</span>
+            {Object.entries(INDICES).filter(([k]) => ['sh000001','sz399001','sz399006'].includes(k)).map(([code, info]) => (
+              <button key={code} onClick={() => setL1Index(code)}
+                style={{ padding: '5px 12px', fontSize: 12, border: `1px solid ${l1Index === code ? info.color : C.border}`, borderRadius: 6,
+                  background: l1Index === code ? info.color + '22' : 'transparent', color: l1Index === code ? info.color : '#888', cursor: 'pointer' }}>
+                {info.name}
+              </button>
+            ))}
+            <span style={{ width: 12 }} />
+            <span style={{ fontSize: 12, color: C.muted, marginRight: 4 }}>周期：</span>
+            {[{ v: 'weekly', label: '周线' }, { v: 'daily', label: '日线' }].map(p => (
+              <button key={p.v} onClick={() => setL1Period(p.v)}
+                style={{ padding: '5px 12px', fontSize: 12, border: `1px solid ${l1Period === p.v ? C.amber : C.border}`, borderRadius: 6,
+                  background: l1Period === p.v ? '#f59e0b22' : 'transparent', color: l1Period === p.v ? C.amber : '#888', cursor: 'pointer' }}>
+                {p.label}
+              </button>
+            ))}
+          </div>
+
           {/* 核心结论 —— 一眼看清 */}
           <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
             <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${mainColor}` }}>
-              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>主力状态</div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>主力状态（全市场）</div>
               <div style={{ fontSize: 28, fontWeight: 800, color: mainColor }}>{mainLabel}</div>
               <div style={{ fontSize: 14, color: '#aaa', marginTop: 4 }}>
                 全市场主力单日净额：<span style={{ fontWeight: 700, color: mainColor }}>{mainFlowAmt.toFixed(1)}亿</span>
@@ -565,17 +593,17 @@ export default function ReplayPage() {
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${maArrangement.color}` }}>
-              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>均线排列</div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>均线排列（{INDICES[l1Index]?.name}）</div>
               <div style={{ fontSize: 28, fontWeight: 800, color: maArrangement.color }}>{maArrangement.text}</div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
-                MA5/MA10/MA20 基于上证周线收盘价
+                MA5/MA10/MA20 · {l1Period === 'weekly' ? '周线' : '日线'}收盘价
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${volStatus.color}` }}>
-              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>周线量能</div>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>{l1Period === 'weekly' ? '周' : '日'}线量能（{INDICES[l1Index]?.name}）</div>
               <div style={{ fontSize: 20, fontWeight: 700, color: volStatus.color }}>{volStatus.text}</div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
-                近2周 vs 前3周对比
+                近2{l1Period === 'weekly' ? '周' : '日'} vs 前3{l1Period === 'weekly' ? '周' : '日'}对比
               </div>
             </div>
           </div>
@@ -589,8 +617,8 @@ export default function ReplayPage() {
             </span>
             <span style={{ fontSize: 13, color: '#aaa', marginLeft: 12 }}>
               {mainOk
-                ? `周线${maArrangement.text === '多头排列 ↗' ? '均线多头排列+主力净流入' : '主力在场但均线未形成多头'}——${maArrangement.text === '多头排列 ↗' ? '可积极操作' : '等均线确认后加仓'}`
-                : `主力离场+周线${maArrangement.text}——严格防守，等待主力回流`}
+                ? `${l1Period === 'weekly' ? '周' : '日'}线${maArrangement.text === '多头排列 ↗' ? '均线多头排列+主力净流入' : '主力在场但均线未形成多头'}——${maArrangement.text === '多头排列 ↗' ? '可积极操作' : '等均线确认后加仓'}`
+                : `主力离场+${l1Period === 'weekly' ? '周' : '日'}线${maArrangement.text}——严格防守，等待主力回流`}
             </span>
           </div>
         </div>
