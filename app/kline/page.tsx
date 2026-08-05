@@ -15,6 +15,19 @@ const DEFAULT_STOCKS = [
   { code: '300059', name: '东方财富' },
 ]
 
+const DEFAULT_CONCEPTS = [
+  { code: '885311', name: '智能电网' },
+  { code: '885312', name: '物联网' },
+  { code: '885333', name: '移动支付' },
+  { code: '885338', name: '融资融券' },
+  { code: '885343', name: '稀土永磁' },
+  { code: '885353', name: '白酒' },
+  { code: '885359', name: '锂电池' },
+  { code: '885362', name: '新能源车' },
+  { code: '885390', name: '半导体' },
+  { code: '885409', name: '人工智能' },
+]
+
 const PERIODS = [
   { key: 'daily', label: '日K' },
   { key: 'weekly', label: '周K' },
@@ -30,10 +43,12 @@ const INDEX_MODES = [
   { key: 'ma', label: '仅均线' },
 ]
 
+// 个股带市场后缀；概念/指数（88/BK 开头）不加后缀
 function toSymbol(code: string): string {
   const c = String(code).trim()
   if (/^(6|9|5)/.test(c)) return `${c}.sh`
-  return `${c}.sz`
+  if (/^(0|3|1|2)/.test(c)) return `${c}.sz`
+  return c
 }
 
 const PERIOD_MAP: Record<string, number> = {
@@ -45,7 +60,6 @@ const PERIOD_MAP: Record<string, number> = {
   '5m': 5,
 }
 
-// 按指标模式生成副图配置
 function getWindows(mode: string) {
   const base: any[] = [{ Index: 'MA', Modify: false, Change: false }]
   if (mode === 'macd') base.push({ Index: 'MACD', Modify: false, Change: false })
@@ -54,15 +68,15 @@ function getWindows(mode: string) {
 }
 
 export default function KlinePage() {
-  const [stockList, setStockList] = useState(DEFAULT_STOCKS)
+  const [tab, setTab] = useState<'stock' | 'concept'>('stock')
+  const [list, setList] = useState<any[]>(DEFAULT_STOCKS)
   const [selectedIdx, setSelectedIdx] = useState(0)
-  const symbol = stockList[selectedIdx] ?? DEFAULT_STOCKS[0]
+  const symbol = list[selectedIdx] ?? DEFAULT_STOCKS[0]
   const [query, setQuery] = useState('')
   const [candidates, setCandidates] = useState<any[]>([])
   const [libReady, setLibReady] = useState(false)
   const [loading, setLoading] = useState(false)
   const [errMsg, setErrMsg] = useState('')
-  // 上图默认日K+MACD，下图默认周K+成交量
   const [periodTop, setPeriodTop] = useState('daily')
   const [periodBottom, setPeriodBottom] = useState('weekly')
   const [indexTop, setIndexTop] = useState('macd')
@@ -126,7 +140,6 @@ export default function KlinePage() {
       },
       NetworkFilter: (data: any, callback: (d: any) => void) => {
         const cmd = data.Name || data.Request?.Command || ''
-        // 指标权限认证：直接放行
         if (cmd === 'ScriptIndex::RequestAuthorization') {
           callback({ code: 0, data: [] })
           return
@@ -181,7 +194,6 @@ export default function KlinePage() {
     return chart
   }, [])
 
-  // 双图重建（上图=日K, 下图=周K；周期/指标各自独立）
   useEffect(() => {
     if (!libReady) return
     if (topRef.current) chartTop.current = makeChart(topRef.current, periodTop, indexTop)
@@ -189,7 +201,6 @@ export default function KlinePage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [libReady, symbol, periodTop, periodBottom, indexTop, indexBottom])
 
-  // 触控板手势
   const handleWheel = useCallback((e: WheelEvent) => {
     e.preventDefault()
     const container = e.currentTarget as HTMLDivElement
@@ -201,41 +212,51 @@ export default function KlinePage() {
     }
   }, [])
 
-  // 键盘 ↑↓ 切换股票
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (e.key === 'ArrowUp') setSelectedIdx((i) => Math.max(0, i - 1))
-      else if (e.key === 'ArrowDown') setSelectedIdx((i) => Math.min(stockList.length - 1, i + 1))
+      else if (e.key === 'ArrowDown') setSelectedIdx((i) => Math.min(list.length - 1, i + 1))
     }
     window.addEventListener('keydown', h)
     return () => window.removeEventListener('keydown', h)
-  }, [stockList.length])
+  }, [list.length])
 
-  // 搜索（按 code 去重）
-  const doSearch = useCallback((q: string) => {
-    if (!q.trim()) {
-      setCandidates([])
-      return
-    }
-    fetch(`/api/stocks?q=${encodeURIComponent(q.trim())}&limit=20`)
-      .then((r) => r.json())
-      .then((d) => {
-        const seen = new Set<string>()
-        const uniq: any[] = []
-        ;(Array.isArray(d.items) ? d.items : []).forEach((i: any) => {
-          if (!seen.has(i.code)) {
-            seen.add(i.code)
-            uniq.push(i)
+  // 搜索（个股 /api/stocks，概念 /api/concepts）
+  const doSearch = useCallback(
+    (q: string) => {
+      if (!q.trim()) {
+        setCandidates([])
+        return
+      }
+      const url = tab === 'concept' ? `/api/concepts?q=${encodeURIComponent(q.trim())}&limit=10` : `/api/stocks?q=${encodeURIComponent(q.trim())}&limit=20`
+      fetch(url)
+        .then((r) => r.json())
+        .then((d) => {
+          if (tab === 'concept') {
+            const items = Array.isArray(d.rows)
+              ? d.rows.map((r: any) => ({ code: r.board_code, name: r.board_name }))
+              : []
+            setCandidates(items)
+          } else {
+            const seen = new Set<string>()
+            const uniq: any[] = []
+            ;(Array.isArray(d.items) ? d.items : []).forEach((i: any) => {
+              if (!seen.has(i.code)) {
+                seen.add(i.code)
+                uniq.push(i)
+              }
+            })
+            setCandidates(uniq)
           }
         })
-        setCandidates(uniq)
-      })
-  }, [])
+    },
+    [tab],
+  )
 
-  const pickStock = (c: any) => {
+  const pick = (c: any) => {
     const code = String(c.code || c).trim()
     const name = c.name || code
-    setStockList((prev) => {
+    setList((prev) => {
       const idx = prev.findIndex((x) => x.code === code)
       if (idx >= 0) {
         setSelectedIdx(idx)
@@ -248,7 +269,14 @@ export default function KlinePage() {
     setQuery('')
   }
 
-  // 渲染单个图表块（标题+周期按钮+指标切换+图）
+  const switchTab = (t: 'stock' | 'concept') => {
+    setTab(t)
+    setList(t === 'stock' ? DEFAULT_STOCKS : DEFAULT_CONCEPTS)
+    setSelectedIdx(0)
+    setCandidates([])
+    setQuery('')
+  }
+
   const renderChartBlock = (
     title: string,
     period: string,
@@ -312,16 +340,46 @@ export default function KlinePage() {
 
   return (
     <div style={{ display: 'flex', gap: 10, maxWidth: 1400, margin: '0 auto', padding: '14px', fontFamily: 'var(--font-serif-sc), serif' }}>
-      {/* 左侧窄选择框 */}
       <div style={{ width: 150, flexShrink: 0, border: '1px solid #e5e5e5', borderRadius: 8, padding: 8, background: '#fff', display: 'flex', flexDirection: 'column' }}>
-        <div style={{ fontWeight: 600, marginBottom: 6, fontSize: 13 }}>自选</div>
+        <div style={{ display: 'flex', gap: 4, marginBottom: 6 }}>
+          <button
+            onClick={() => switchTab('stock')}
+            style={{
+              flex: 1,
+              padding: '4px 0',
+              fontSize: 12,
+              border: '1px solid #ccc',
+              borderRadius: 5,
+              cursor: 'pointer',
+              background: tab === 'stock' ? '#333' : '#fff',
+              color: tab === 'stock' ? '#fff' : '#333',
+            }}
+          >
+            个股
+          </button>
+          <button
+            onClick={() => switchTab('concept')}
+            style={{
+              flex: 1,
+              padding: '4px 0',
+              fontSize: 12,
+              border: '1px solid #ccc',
+              borderRadius: 5,
+              cursor: 'pointer',
+              background: tab === 'concept' ? '#8b4513' : '#fff',
+              color: tab === 'concept' ? '#fff' : '#333',
+            }}
+          >
+            概念
+          </button>
+        </div>
         <input
           value={query}
           onChange={(e) => {
             setQuery(e.target.value)
             doSearch(e.target.value)
           }}
-          placeholder="代码/名称"
+          placeholder={tab === 'concept' ? '概念名/代码' : '代码/名称'}
           style={{ padding: '5px 8px', fontSize: 12, border: '1px solid #ccc', borderRadius: 6, marginBottom: 6 }}
         />
         {candidates.length > 0 && (
@@ -329,7 +387,7 @@ export default function KlinePage() {
             {candidates.map((c) => (
               <div
                 key={c.code}
-                onClick={() => pickStock(c)}
+                onClick={() => pick(c)}
                 style={{ padding: '5px 8px', cursor: 'pointer', borderBottom: '1px solid #f0f0f0', fontSize: 12 }}
               >
                 <b>{c.name}</b> <span style={{ color: '#999', fontSize: 11 }}>{c.code}</span>
@@ -338,7 +396,7 @@ export default function KlinePage() {
           </div>
         )}
         <div style={{ flex: 1, overflowY: 'auto' }}>
-          {stockList.map((s, i) => (
+          {list.map((s, i) => (
             <div
               key={s.code}
               onClick={() => setSelectedIdx(i)}
@@ -359,7 +417,6 @@ export default function KlinePage() {
         <div style={{ marginTop: 4, color: '#999', fontSize: 10, textAlign: 'center' }}>↑↓切换 · 触控板滑</div>
       </div>
 
-      {/* 右侧图表区：上图=日K（默认），下图=周K（默认） */}
       <div style={{ flex: 1, minWidth: 0 }}>
         {loading && <div style={{ textAlign: 'center', color: '#888', padding: 4, fontSize: 12 }}>数据加载中…</div>}
         {errMsg && !loading && (
@@ -370,7 +427,7 @@ export default function KlinePage() {
         {renderChartBlock('日K', periodTop, setPeriodTop, indexTop, setIndexTop, topRef, 400)}
         {renderChartBlock('周K', periodBottom, setPeriodBottom, indexBottom, setIndexBottom, bottomRef, 400)}
         <p style={{ marginTop: 6, color: '#999', fontSize: 12, textAlign: 'center' }}>
-          两图独立切换周期与指标 · 触控板左右滑=滚动时间 上下滑=缩放
+          {tab === 'concept' ? '概念指数 K 线（同花顺 885 系列）' : '个股 K 线（PostgreSQL 数据源）'} · 触控板左右滑=滚动时间 上下滑=缩放
         </p>
       </div>
     </div>
