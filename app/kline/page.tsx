@@ -222,20 +222,22 @@ export default function KlinePage() {
   const openBoard = (b: any) => {
     setCurBoard(b)
     setErrMsg('')
+    setList([{ code: b.code, name: b.name + '（板块指数）' }])
+    setSelectedIdx(0)
     fetch(`/api/board_stocks?board_code=${encodeURIComponent(b.code)}`)
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.rows) && d.rows.length) {
-          setList(d.rows.map((r: any) => ({ code: r.code, name: r.name || r.code })))
-          setSelectedIdx(0)
+          setList((prev) => [
+            ...prev,
+            ...d.rows.map((r: any) => ({ code: r.code, name: r.name || r.code })),
+          ])
         } else {
           setErrMsg('板块无成分股数据')
-          setCurBoard(null)
         }
       })
       .catch(() => {
         setErrMsg('成分股加载失败')
-        setCurBoard(null)
       })
   }
 
