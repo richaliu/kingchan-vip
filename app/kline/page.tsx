@@ -126,6 +126,11 @@ export default function KlinePage() {
       },
       NetworkFilter: (data: any, callback: (d: any) => void) => {
         const cmd = data.Name || data.Request?.Command || ''
+        // 指标权限认证：直接放行
+        if (cmd === 'ScriptIndex::RequestAuthorization') {
+          callback({ code: 0, data: [] })
+          return
+        }
         const reqCode = symbolRef.current.code
         const isMinute = cmd === 'KLineChartContainer::ReqeustHistoryMinuteData'
         const isDay = cmd === 'KLineChartContainer::RequestHistoryData'
