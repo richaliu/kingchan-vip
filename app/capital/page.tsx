@@ -11,18 +11,17 @@ function fmtMoney(v: any): string {
   return n.toFixed(0)
 }
 
-function fmtPct(v: any): string {
-  const n = Number(v)
-  if (!isFinite(n)) return '-'
-  return (n * 100).toFixed(2) + '%'
+function flowColor(v: any): string {
+  return Number(v) >= 0 ? '#c00' : '#0a8'
 }
 
 export default function CapitalPage() {
-  const [tab, setTab] = useState<'stock' | 'north' | 'board'>('stock')
+  const [tab, setTab] = useState<'stock' | 'concept' | 'north'>('stock')
   const [query, setQuery] = useState('600519')
   const [flow, setFlow] = useState<any[]>([])
+  const [concepts, setConcepts] = useState<any[]>([])
+  const [conceptDate, setConceptDate] = useState('')
   const [north, setNorth] = useState<any[]>([])
-  const [boards, setBoards] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
 
@@ -48,12 +47,15 @@ export default function CapitalPage() {
 
   useEffect(() => {
     loadFlow('600519')
+    fetch('/api/concept_flow?limit=80')
+      .then((r) => r.json())
+      .then((d) => {
+        setConcepts(Array.isArray(d.rows) ? d.rows : [])
+        setConceptDate(d.date || '')
+      })
     fetch('/api/capital_flow/northbound?limit=30')
       .then((r) => r.json())
       .then((d) => setNorth(Array.isArray(d.rows) ? d.rows : []))
-    fetch('/api/concepts?limit=30')
-      .then((r) => r.json())
-      .then((d) => setBoards(Array.isArray(d.rows) ? d.rows : []))
   }, [loadFlow])
 
   return (
@@ -63,8 +65,8 @@ export default function CapitalPage() {
       <div style={{ display: 'flex', gap: 8, marginBottom: 16 }}>
         {[
           { k: 'stock', label: '个股资金流' },
+          { k: 'concept', label: '概念资金流' },
           { k: 'north', label: '北向资金' },
-          { k: 'board', label: '概念板块' },
         ].map((t) => (
           <button
             key={t.k}
@@ -110,11 +112,12 @@ export default function CapitalPage() {
                   <tr style={{ background: '#f5f2ea', color: '#555' }}>
                     <th style={th}>日期</th>
                     <th style={th}>收盘</th>
-                    <th style={th}>涨跌幅</th>
-                    <th style={th}>换手率</th>
-                    <th style={th}>净流入</th>
                     <th style={th}>主力净流入</th>
-                    <th style={th}>主力占比</th>
+                    <th style={th}>超大单</th>
+                    <th style={th}>大单</th>
+                    <th style={th}>中单</th>
+                    <th style={th}>小单</th>
+                    <th style={th}>净额</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -122,13 +125,12 @@ export default function CapitalPage() {
                     <tr key={i} style={{ borderBottom: '1px solid #f0ece2' }}>
                       <td style={td}>{r.date}</td>
                       <td style={td}>{Number(r.trade).toFixed(2)}</td>
-                      <td style={{ ...td, color: Number(r.chg_ratio) >= 0 ? '#c00' : '#0a8' }}>
-                        {fmtPct(r.chg_ratio)}
-                      </td>
-                      <td style={td}>{Number(r.turnover).toFixed(2)}%</td>
-                      <td style={{ ...td, color: Number(r.netamount) >= 0 ? '#c00' : '#0a8' }}>{fmtMoney(r.netamount)}</td>
-                      <td style={{ ...td, color: Number(r.main_net) >= 0 ? '#c00' : '#0a8', fontWeight: 600 }}>{fmtMoney(r.main_net)}</td>
-                      <td style={{ ...td, color: Number(r.main_ratio) >= 0 ? '#c00' : '#0a8' }}>{Number(r.main_ratio).toFixed(2)}%</td>
+                      <td style={{ ...td, color: flowColor(r.main), fontWeight: 600 }}>{fmtMoney(r.main)}</td>
+                      <td style={{ ...td, color: flowColor(r.super_net) }}>{fmtMoney(r.super_net)}</td>
+                      <td style={{ ...td, color: flowColor(r.large_net) }}>{fmtMoney(r.large_net)}</td>
+                      <td style={{ ...td, color: flowColor(r.mid_net) }}>{fmtMoney(r.mid_net)}</td>
+                      <td style={{ ...td, color: flowColor(r.small_net) }}>{fmtMoney(r.small_net)}</td>
+                      <td style={{ ...td, color: flowColor(r.netamount) }}>{fmtMoney(r.netamount)}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -136,6 +138,40 @@ export default function CapitalPage() {
             </div>
           )}
         </>
+      )}
+
+      {tab === 'concept' && (
+        <div style={{ overflowX: 'auto' }}>
+          <div style={{ color: '#666', fontSize: 13, marginBottom: 8 }}>
+            概念成分股资金流聚合（{conceptDate} · 主力 = 超大单 + 大单）
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#f5f2ea', color: '#555' }}>
+                <th style={th}>#</th>
+                <th style={th}>概念板块</th>
+                <th style={th}>成分数</th>
+                <th style={th}>主力净流入</th>
+                <th style={th}>超大单</th>
+                <th style={th}>大单</th>
+                <th style={th}>净额</th>
+              </tr>
+            </thead>
+            <tbody>
+              {concepts.map((r, i) => (
+                <tr key={r.board_code} style={{ borderBottom: '1px solid #f0ece2' }}>
+                  <td style={td}>{i + 1}</td>
+                  <td style={{ ...td, fontWeight: 600 }}>{r.board_name}</td>
+                  <td style={td}>{r.covered}/{r.stock_count}</td>
+                  <td style={{ ...td, color: flowColor(r.main), fontWeight: 600 }}>{fmtMoney(r.main)}</td>
+                  <td style={{ ...td, color: flowColor(r.super) }}>{fmtMoney(r.super)}</td>
+                  <td style={{ ...td, color: flowColor(r.large) }}>{fmtMoney(r.large)}</td>
+                  <td style={{ ...td, color: flowColor(r.netamount) }}>{fmtMoney(r.netamount)}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
       )}
 
       {tab === 'north' && (
@@ -157,28 +193,7 @@ export default function CapitalPage() {
                   <td style={td}>{r.type}</td>
                   <td style={td}>{fmtMoney(r.buy_amt)}</td>
                   <td style={td}>{fmtMoney(r.sell_amt)}</td>
-                  <td style={{ ...td, color: Number(r.net_amt) >= 0 ? '#c00' : '#0a8', fontWeight: 600 }}>{fmtMoney(r.net_amt)}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-
-      {tab === 'board' && (
-        <div style={{ overflowX: 'auto' }}>
-          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
-            <thead>
-              <tr style={{ background: '#f5f2ea', color: '#555' }}>
-                <th style={th}>概念板块</th>
-                <th style={th}>成分股数</th>
-              </tr>
-            </thead>
-            <tbody>
-              {boards.map((r, i) => (
-                <tr key={i} style={{ borderBottom: '1px solid #f0ece2' }}>
-                  <td style={td}>{r.board_name}</td>
-                  <td style={td}>{r.stock_count}</td>
+                  <td style={{ ...td, color: flowColor(r.net_amt), fontWeight: 600 }}>{fmtMoney(r.net_amt)}</td>
                 </tr>
               ))}
             </tbody>
