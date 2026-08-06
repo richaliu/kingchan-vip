@@ -9,6 +9,7 @@ const NAV = [
   { href: '/articles', label: '缠论全集' },
   { href: '/chanlun', label: '缠论图谱' },
   { href: '/kline', label: 'K线图' },
+  { href: '/cctv', label: '新闻联播' },
   { href: '/capital', label: '资金流动' },
   { href: '/political', label: '政治基本面' },
   { href: '/fundamentals', label: '估值财务' },
