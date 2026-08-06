@@ -25,12 +25,24 @@ function cleanSubtext(sub: string | null | undefined, _sum: string | null | unde
 
 export default function CctvPage() {
   const [months, setMonths] = useState<{ month: string; cnt: number }[]>([])
-  const [month, setMonth] = useState('')
+  const [year, setYear] = useState('')
+  const [monthMode, setMonthMode] = useState('') // ''=全年, 'YYYYMM'=单月
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
   const [hoverIdx, setHoverIdx] = useState<number | null>(null)
   const [filters, setFilters] = useState<{ line?: string; bull?: string }>({})
+
+  // 从月份列表推导年份 + 该年有数据的月份
+  const years = useMemo(() => {
+    const ys = Array.from(new Set(months.map((m) => m.month.slice(0, 4)))).sort().reverse()
+    return ys
+  }, [months])
+
+  const monthOptions = useMemo(() => {
+    if (!year) return []
+    return months.filter((m: { month: string; cnt: number }) => m.month.startsWith(year)).sort()
+  }, [months, year])
 
   useEffect(() => {
     fetch('/api/cctv_labels?limit=1')
@@ -39,17 +51,22 @@ export default function CctvPage() {
         if (Array.isArray(d.months) && d.months.length) {
           const ms = d.months
           setMonths(ms)
-          setMonth(ms[0].month) // 默认最新月份
+          const ys = Array.from(new Set(ms.map((m) => m.month.slice(0, 4)))).sort().reverse()
+          setYear(ys[0] || '') // 默认最新年份
+          setMonthMode('') // 默认全年
         }
       })
       .catch(() => setErr('数据源不可达'))
   }, [])
 
   useEffect(() => {
-    if (!month) return
+    if (!year) return
     setLoading(true)
     setErr('')
-    fetch(`/api/cctv_labels?month=${month}&limit=600`)
+    // 全年 → 传年份(4位)；单月 → 传 YYYYMM
+    const q = monthMode || year
+    const limit = monthMode ? 600 : 5000
+    fetch(`/api/cctv_labels?month=${q}&limit=${limit}`)
       .then((r) => r.json())
       .then((d) => {
         setLoading(false)
@@ -59,7 +76,7 @@ export default function CctvPage() {
         setLoading(false)
         setErr('加载失败')
       })
-  }, [month])
+  }, [year, monthMode])
 
   // 表头标签筛选
   const visibleRows = useMemo(() => {
@@ -92,15 +109,31 @@ export default function CctvPage() {
       </div>
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 14 }}>月份</label>
+        <label style={{ fontSize: 14 }}>年份</label>
         <select
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
+          value={year}
+          onChange={(e) => {
+            setYear(e.target.value)
+            setMonthMode('')
+          }}
           style={{ padding: '7px 12px', fontSize: 14, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
         >
-          {months.map((m) => (
+          {years.map((y) => (
+            <option key={y} value={y}>
+              {y}
+            </option>
+          ))}
+        </select>
+        <label style={{ fontSize: 14 }}>月份</label>
+        <select
+          value={monthMode}
+          onChange={(e) => setMonthMode(e.target.value)}
+          style={{ padding: '7px 12px', fontSize: 14, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
+        >
+          <option value="">全年</option>
+          {monthOptions.map((m) => (
             <option key={m.month} value={m.month}>
-              {m.month.slice(0, 4)}-{m.month.slice(4)}（{m.cnt}条）
+              {Number(m.month.slice(4))}月（{m.cnt}条）
             </option>
           ))}
         </select>
