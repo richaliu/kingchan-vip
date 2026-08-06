@@ -157,6 +157,10 @@ export default function ReplayPage() {
   const [stock, setStock] = useState<any>(null)
   const [stockCode, setStockCode] = useState('600519')
   const [loading, setLoading] = useState(false)
+  const [l1Index, setL1Index] = useState('sh000001')   // 大盘方向：指数
+  const [l1Period, setL1Period] = useState('weekly')    // 大盘方向：周期 weekly|daily
+  const [topListRecent, setTopListRecent] = useState<any>(null)  // 全市场龙虎榜
+  const [stockTopList, setStockTopList] = useState<any>(null)    // 个股龙虎榜
   const ecReady = useRef(false)
   const chartRefs = useRef<Record<string, any>>({})
 
@@ -174,20 +178,26 @@ export default function ReplayPage() {
     fetch('/api/replay/macro').then(r => r.json()).then(setMacro).catch(() => {})
     fetch('/api/replay/sectors').then(r => r.json()).then(setSectors).catch(() => {})
     fetch('/api/replay/sentiment').then(r => r.json()).then(setSentiment).catch(() => {})
+    fetch('/api/replay/top_list/recent?days=1').then(r => r.json()).then(setTopListRecent).catch(() => {})
   }
 
   const searchStock = (code: string) => {
     if (!code.trim()) return
     setLoading(true)
     setStock(null)
+    setStockTopList(null)
     fetch(`/api/replay/stock?code=${encodeURIComponent(code.trim())}&days=60`)
       .then(r => r.json()).then(d => { setStock(d); setLoading(false) })
       .catch(() => setLoading(false))
+    fetch(`/api/replay/top_list?code=${encodeURIComponent(code.trim())}&days=60`)
+      .then(r => r.json()).then(setStockTopList).catch(() => {})
   }
 
-  // ===================== Layer 1: 大盘周线方向 =====================
+  // ===================== Layer 1: 大盘方向图表 =====================
   useEffect(() => {
-    if (layer !== 'l1' || !macro?.index_weekly?.length || !ecReady.current) return
+    if (layer !== 'l1' || !ecReady.current) return
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return
     const el = document.getElementById('chart-l1')
     if (!el) return
     const ec = (window as any).echarts
@@ -195,65 +205,85 @@ export default function ReplayPage() {
     const dom = ec.init(el!, 'dark')
     chartRefs.current.l1 = dom
 
-    // 主力指数：上证/深证/创业板
-    const codes = ['sh000001', 'sz399001', 'sz399006']
-    const byCode: Record<string, any[]> = {}
-    macro.index_weekly.forEach((r: any) => {
-      const c = r.code || ''
-      if (codes.includes(c)) { if (!byCode[c]) byCode[c] = []; byCode[c].push(r) }
-    })
+    const idxInfo = INDICES[l1Index] || { name: l1Index, color: '#999' }
+    const limit = l1Period === 'weekly' ? 52 : 90
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d))).slice(-limit)
+    const dates = raw.map((r: any) => String(r.d).slice(0, l1Period === 'weekly' ? 10 : 10))
+    const closes = raw.map((r: any) => Number(r.close))
+    const vols = raw.map((r: any) => Number(r.volume || 0) / 1e8)
 
-    const series: any[] = []
-    codes.forEach(code => {
-      const data = (byCode[code] || []).map((r: any) => [String(r.d), Number(r.close)]).reverse()
-      // 均线
-      const closes = data.map((d: any) => d[1])
-      const ma5 = calcMA(closes, 5)
-      const ma10 = calcMA(closes, 10)
-      const ma20 = calcMA(closes, 20)
-
-      series.push({
-        name: (INDICES[code]?.name || code) + ' 收盘',
-        type: 'line', data, smooth: true, symbol: 'none',
-        lineStyle: { color: INDICES[code]?.color || '#999', width: 2 },
-      })
-      // 均线用虚线
-      if (code === 'sh000001') {
-        const maColors = ['#f59e0b', '#06b6d4', '#a78bfa']
-        const maLabels = ['MA5', 'MA10', 'MA20']
-        ;[ma5, ma10, ma20].forEach((ma, i) => {
-          const maData = data.map((d: any, j: number) => ma[j] != null ? [d[0], ma[j]] : null).filter(Boolean)
-          series.push({
-            name: maLabels[i], type: 'line', data: maData, symbol: 'none',
-            lineStyle: { color: maColors[i], width: 1, type: 'dashed' },
-          })
-        })
-      }
-      // 成交量
-      const vols = (byCode[code] || []).map((r: any) => Number(r.volume || 0)).reverse()
-      if (code === 'sh000001') {
-        series.push({
-          name: '上证周量', type: 'bar', data: vols.map((v, i) => [data[i]?.[0], v / 1e8]), yAxisIndex: 1,
-          itemStyle: { color: vols.map(v => v > (vols.reduce((a: number, b: number) => a + b, 0) / vols.length) * 1.5 ? '#f59e0b88' : '#1e293b') },
-        })
-      }
-    })
+    const ma5 = calcMA(closes, 5)
+    const ma10 = calcMA(closes, 10)
+    const ma20 = calcMA(closes, 20)
+    const maColors = ['#f59e0b', '#06b6d4', '#a78bfa']
+    const maLabels = ['MA5', 'MA10', 'MA20']
+    const periodLabel = l1Period === 'weekly' ? '周' : '日'
 
     dom.setOption({
       backgroundColor: C.bg,
-      title: { text: '大盘周线方向（52周）', textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
+      title: { text: `${idxInfo.name}${periodLabel}线（${limit}${periodLabel}）`, textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
       tooltip: { trigger: 'axis' },
-      legend: { data: series.filter((s: any) => !s.name.includes('周量') && !s.name.startsWith('MA')).map((s: any) => s.name), textStyle: { color: '#aaa' }, bottom: 0 },
-      grid: { top: 40, left: 55, right: 15, bottom: 40, height: '60%' },
-      xAxis: { type: 'time', axisLabel: { color: '#888', fontSize: 10 } },
-      yAxis: [
-        { type: 'value', axisLabel: { color: '#888', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b' } } },
-        { type: 'value', axisLabel: { show: false }, splitLine: { show: false }, gridIndex: 0, show: false },
+      legend: { data: [`${idxInfo.name}收盘`, ...maLabels, `${periodLabel}量`], textStyle: { color: '#aaa' }, bottom: 0 },
+      grid: [
+        { top: 35, left: 55, right: 15, bottom: 40, height: '60%' },
+        { top: '78%', left: 55, right: 15, height: '15%' },
       ],
-      series,
+      xAxis: [
+        { type: 'category', data: dates, axisLabel: { color: '#888', fontSize: 9 }, gridIndex: 0 },
+        { type: 'category', data: dates, axisLabel: { show: false }, gridIndex: 1 },
+      ],
+      yAxis: [
+        { type: 'value', scale: true, axisLabel: { color: '#888', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 0 },
+        { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 1 },
+      ],
+      series: [
+        { name: `${idxInfo.name}收盘`, type: 'line', data: closes.map((v: number, i: number) => [dates[i], v]), smooth: true, symbol: 'none',
+          lineStyle: { color: idxInfo.color, width: 2 } },
+        ...[ma5, ma10, ma20].map((ma: (number | null)[], i: number) => ({
+          name: maLabels[i], type: 'line' as const,
+          data: ma.map((v, j) => v != null ? [dates[j], v] : null).filter(Boolean),
+          symbol: 'none', lineStyle: { color: maColors[i], width: 1, type: 'dashed' as const },
+        })),
+        { name: `${periodLabel}量`, type: 'bar', xAxisIndex: 1, yAxisIndex: 1,
+          data: dates.map((d: string, i: number) => [d, vols[i]]),
+          itemStyle: { color: vols.map((v: number) => v > (vols.reduce((a: number, b: number) => a + b, 0) / vols.length) * 1.5 ? '#f59e0b44' : '#1e293b') } },
+      ],
     })
     return () => dom.dispose()
-  }, [layer, macro])
+  }, [layer, macro, l1Index, l1Period])
+
+  // 均线排列计算（基于选中的指数+周期）
+  const maArrangement = (() => {
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return { text: '数据加载中', color: C.muted }
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
+    if (raw.length < 20) return { text: '数据不足', color: C.muted }
+    const closes = raw.map((r: any) => Number(r.close))
+    const m5 = closes.slice(-5).reduce((a: number, b: number) => a + b, 0) / 5
+    const m10 = closes.slice(-10).reduce((a: number, b: number) => a + b, 0) / 10
+    const m20 = closes.slice(-20).reduce((a: number, b: number) => a + b, 0) / 20
+    if (m5 > m10 && m10 > m20) return { text: '多头排列 ↗', color: C.green }
+    if (m5 < m10 && m10 < m20) return { text: '空头排列 ↘', color: C.red }
+    return { text: '缠绕震荡 ↔', color: C.amber }
+  })()
+
+  // 量能判断（基于选中的指数+周期）
+  const volStatus = (() => {
+    const dataSource = l1Period === 'weekly' ? macro?.index_weekly : macro?.index_kline
+    if (!dataSource?.length) return { text: '—', color: C.muted }
+    const raw = dataSource.filter((r: any) => r.code === l1Index).sort((a: any, b: any) => String(a.d).localeCompare(String(b.d)))
+    if (raw.length < 5) return { text: '—', color: C.muted }
+    const recent2 = raw.slice(-2)
+    const prev3 = raw.slice(-5, -2)
+    const avgR2 = recent2.reduce((s: number, r: any) => s + Number(r.volume || 0), 0) / 2
+    const avgP3 = prev3.reduce((s: number, r: any) => s + Number(r.volume || 0), 0) / 3
+    if (avgR2 > avgP3 * 1.5) {
+      const priceUp = Number(recent2[1]?.close || 0) > Number(recent2[0]?.close || 0)
+      return priceUp ? { text: '放量上涨（主力进场）', color: C.green } : { text: '放量滞涨 ⚠️', color: C.red }
+    }
+    if (avgR2 < avgP3 * 0.5) return { text: '缩量（筹码锁定）', color: C.amber }
+    return { text: '量能正常', color: C.muted }
+  })()
 
   // ===================== Layer 2: 日线+资金流 =====================
   useEffect(() => {
@@ -265,53 +295,57 @@ export default function ReplayPage() {
     const dom = ec.init(el!, 'dark')
     chartRefs.current.l2 = dom
 
-    // 上证日K
+    // 上证日K — 取最近90日，用真实OHLC
     const sh = (macro.index_kline || []).filter((r: any) => r.code === 'sh000001').sort((a: any, b: any) => String(a.d).localeCompare(String(b.d))).slice(-90)
     const dates = sh.map((r: any) => String(r.d).slice(0, 10))
-    const closes = sh.map((r: any) => Number(r.close))
+    // 蜡烛图数据: [open, close, low, high]
+    const ohlc = sh.map((r: any) => [Number(r.open), Number(r.close), Number(r.low), Number(r.high)])
     const vols = sh.map((r: any) => Number(r.volume || 0) / 1e8)
+    const closes = sh.map((r: any) => Number(r.close))
 
     // VWAP
     const vwap60 = calcVWAP(sh.slice(-60))
-    const vwapLine = vwap60 ? Array(dates.length).fill(vwap60) : null
 
-    // 资金流
+    // 资金流（近10日）
     const mf = (macro.fund_flow_all || []).slice(-10).reverse()
     const mfDates = mf.map((r: any) => String(r.date).slice(0, 10))
     const mainFlow = mf.map((r: any) => (Number(r.super || 0) + Number(r.large || 0)) / 1e8)
-    const smallFlow = mf.map((r: any) => Number(r.small || 0) / 1e8)
 
     dom.setOption({
       backgroundColor: C.bg,
-      title: { text: '上证日线 + 主力资金流', textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
+      title: { text: '上证日线（近90日）— OHLC真实蜡烛 + 主力净额', textStyle: { color: '#ccc', fontSize: 14 }, left: 10, top: 5 },
       tooltip: { trigger: 'axis' },
       grid: [
-        { top: 35, left: 55, right: 15, height: '55%' },
-        { top: '68%', left: 55, right: 15, height: '15%' },
-        { top: '86%', left: 55, right: 15, height: '10%' },
+        { top: 35, left: 60, right: 60, height: '55%' },
+        { top: '68%', left: 60, right: 60, height: '12%' },
+        { top: '83%', left: 60, right: 60, height: '12%' },
       ],
       xAxis: [
         { type: 'category', data: dates, axisLabel: { color: '#888', fontSize: 9 }, gridIndex: 0 },
-        { type: 'category', data: mfDates, axisLabel: { color: '#888', fontSize: 9 }, gridIndex: 1 },
+        { type: 'category', data: dates, axisLabel: { show: false }, gridIndex: 1 },
         { type: 'category', data: mfDates, axisLabel: { color: '#888', fontSize: 9 }, gridIndex: 2 },
       ],
       yAxis: [
-        { type: 'value', axisLabel: { color: '#888', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 0 },
+        { type: 'value', scale: true, axisLabel: { color: '#888', fontSize: 10 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 0 },
         { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 1 },
         { type: 'value', axisLabel: { color: '#888', fontSize: 9 }, splitLine: { lineStyle: { color: '#1e293b' } }, gridIndex: 2 },
       ],
       series: [
-        { type: 'candlestick', name: '上证', xAxisIndex: 0, yAxisIndex: 0,
-          data: sh.map((r: any) => [Number(r.open || r.close), Number(r.close), Number(r.low || r.close * 0.98), Number(r.high || r.close * 1.02)]),
+        // 蜡烛图（上证 OHLC）
+        { type: 'candlestick', name: '上证', xAxisIndex: 0, yAxisIndex: 0, data: ohlc,
           itemStyle: { color: C.red, color0: C.green, borderColor: C.red, borderColor0: C.green } },
-        vwapLine ? { type: 'line', name: 'VWAP(60日)', data: dates.map((d, i) => [d, vwapLine[i]]), xAxisIndex: 0, yAxisIndex: 0,
-          symbol: 'none', lineStyle: { color: '#a78bfa', width: 1.5, type: 'dashed' } } : null,
-        { type: 'bar', name: '成交量(亿手)', data: vols.map((v, i) => [dates[i], v]), xAxisIndex: 0, yAxisIndex: 1,
-          itemStyle: { color: vols.map(v => v > (vols.reduce((a: number, b: number) => a + b, 0) / vols.length) * 1.3 ? '#f59e0b44' : '#1e293b') } },
-        { type: 'bar', name: '主力净额(亿)', data: mainFlow.map((v, i) => [mfDates[i], v]), xAxisIndex: 1, yAxisIndex: 2,
-          itemStyle: { color: mainFlow.map(v => v > 0 ? C.green : C.red) } },
-        { type: 'line', name: '小单(反向)', data: smallFlow.map((v, i) => [mfDates[i], v]), xAxisIndex: 1, yAxisIndex: 2,
-          symbol: 'none', lineStyle: { color: C.rose, width: 1, type: 'dotted' } },
+        // VWAP 虚线
+        vwap60 ? { type: 'line', name: 'VWAP(60日)', xAxisIndex: 0, yAxisIndex: 0,
+          data: dates.map((d: string, i: number) => [d, vwap60]), symbol: 'none',
+          lineStyle: { color: '#a78bfa', width: 1.5, type: 'dashed' } } : null,
+        // 成交量柱
+        { type: 'bar', name: '量(亿手)', xAxisIndex: 0, yAxisIndex: 1,
+          data: dates.map((d: string, i: number) => [d, vols[i]]),
+          itemStyle: { color: vols.map((v: number) => v > (vols.reduce((a: number, b: number) => a + b, 0) / vols.length) * 1.3 ? '#f59e0b44' : '#1e293b') } },
+        // 主力净额柱（底部区域）
+        { type: 'bar', name: '主力净额(亿)', xAxisIndex: 2, yAxisIndex: 2,
+          data: mainFlow.map((v: number, i: number) => [mfDates[i], v]),
+          itemStyle: { color: (p: any) => p.data?.[1] > 0 ? C.green : C.red } },
       ].filter(Boolean),
     })
     return () => dom.dispose()
@@ -440,6 +474,16 @@ export default function ReplayPage() {
   const mainLabel = mainOk ? '主力在场' : '主力离场'
   const mainColor = mainOk ? C.green : C.red
 
+  // 主力净额 20日均值对比（L1 断点1修复）
+  const mainFlow20dAvg = (() => {
+    if (!macro?.fund_flow_all?.length) return null
+    const f = macro.fund_flow_all.slice(0, Math.min(20, macro.fund_flow_all.length))
+    if (f.length < 2) return null
+    const sum = f.reduce((s: number, r: any) => s + (Number(r.super || 0) + Number(r.large || 0)), 0)
+    return sum / f.length / 1e8
+  })()
+  const mainFlowRatio = mainFlow20dAvg && mainFlow20dAvg !== 0 ? mainFlowAmt / mainFlow20dAvg : null
+
   // ===================== Layer 0: 预警 =====================
   const alerts: { text: string; color: string }[] = []
   if (macro?.latest_main) {
@@ -531,31 +575,76 @@ export default function ReplayPage() {
       {/* ========= Layer 1: 大盘方向 ========= */}
       {layer === 'l1' && (
         <div style={{ padding: 20 }}>
-          <div id="chart-l1" style={{ width: '100%', height: 450, marginBottom: 16 }} />
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 12 }}>
-            {/* 主力控盘卡 */}
-            <InfoCard label="主力状态" value={mainLabel} valueColor={mainColor} />
-            <InfoCard label="全市场主力净额" value={mainFlowAmt.toFixed(1) + '亿'} valueColor={mainColor} />
-            <InfoCard label="均线排列" value={macro?.index_weekly ? '周线多头' : '数据加载中'} valueColor={C.emerald} />
-            {/* 融资全市场 */}
-            {macro?.margin_all?.length > 0 && (() => {
-              const m = macro.margin_all
-              const latest = Number(m[0]?.total_margin || 0) / 1e8
-              const prev = Number(m[1]?.total_margin || 0) / 1e8
-              return <InfoCard label="融资余额(亿)" value={latest.toFixed(0)} valueColor={latest > prev ? C.green : C.red} />
-            })()}
-            <InfoCard label="数据日期" value={macro?.latest_main?.date || '-'} valueColor={C.muted} />
+          {/* 指数切换 + 周期切换 */}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 12, color: C.muted, marginRight: 4 }}>指数：</span>
+            {Object.entries(INDICES).filter(([k]) => ['sh000001','sz399001','sz399006'].includes(k)).map(([code, info]) => (
+              <button key={code} onClick={() => setL1Index(code)}
+                style={{ padding: '5px 12px', fontSize: 12, border: `1px solid ${l1Index === code ? info.color : C.border}`, borderRadius: 6,
+                  background: l1Index === code ? info.color + '22' : 'transparent', color: l1Index === code ? info.color : '#888', cursor: 'pointer' }}>
+                {info.name}
+              </button>
+            ))}
+            <span style={{ width: 12 }} />
+            <span style={{ fontSize: 12, color: C.muted, marginRight: 4 }}>周期：</span>
+            {[{ v: 'weekly', label: '周线' }, { v: 'daily', label: '日线' }].map(p => (
+              <button key={p.v} onClick={() => setL1Period(p.v)}
+                style={{ padding: '5px 12px', fontSize: 12, border: `1px solid ${l1Period === p.v ? C.amber : C.border}`, borderRadius: 6,
+                  background: l1Period === p.v ? '#f59e0b22' : 'transparent', color: l1Period === p.v ? C.amber : '#888', cursor: 'pointer' }}>
+                {p.label}
+              </button>
+            ))}
           </div>
-          {/* 方向标签 */}
-          <div style={{ padding: '12px 16px', background: C.card, borderRadius: 8, marginBottom: 8 }}>
-            <span style={{ color: '#aaa', fontSize: 13 }}>🧭 战略方向：</span>
-            <Badge text={mainOk ? '战略看多（主力在场）' : '战略看空（主力撤离）'} color={mainOk ? C.green : C.red} />
-            <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>
-              周线超大单5周净流向 + 日线主力净额综合判断
+
+          {/* 核心结论 —— 一眼看清 */}
+          <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', marginBottom: 16 }}>
+            <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${mainColor}` }}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>主力状态（全市场）</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: mainColor }}>{mainLabel}</div>
+              <div style={{ fontSize: 14, color: '#aaa', marginTop: 4 }}>
+                全市场主力单日净额：<span style={{ fontWeight: 700, color: mainColor }}>{mainFlowAmt.toFixed(1)}亿</span>
+                {mainFlowRatio && (
+                  <span style={{ fontSize: 12, marginLeft: 8, color: mainFlowRatio > 2 ? C.green : mainFlowRatio > 1 ? C.amber : C.muted }}>
+                    (20日均 {mainFlow20dAvg?.toFixed(0)}亿 的 {mainFlowRatio.toFixed(1)}x)
+                  </span>
+                )}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                {mainOk
+                  ? (mainFlowRatio && mainFlowRatio > 2
+                    ? `主力净额是平时的${mainFlowRatio.toFixed(0)}倍——大资金在动手，不是普通交易日`
+                    : '主力持续买入——市场有资金托底，回调即低吸机会')
+                  : '主力撤退——控制仓位，等待主力回流信号'}
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${maArrangement.color}` }}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>均线排列（{INDICES[l1Index]?.name}）</div>
+              <div style={{ fontSize: 28, fontWeight: 800, color: maArrangement.color }}>{maArrangement.text}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+                MA5/MA10/MA20 · {l1Period === 'weekly' ? '周线' : '日线'}收盘价
+              </div>
+            </div>
+            <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${volStatus.color}` }}>
+              <div style={{ fontSize: 13, color: C.muted, marginBottom: 6 }}>{l1Period === 'weekly' ? '周' : '日'}线量能（{INDICES[l1Index]?.name}）</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: volStatus.color }}>{volStatus.text}</div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>
+                近2{l1Period === 'weekly' ? '周' : '日'} vs 前3{l1Period === 'weekly' ? '周' : '日'}对比
+              </div>
+            </div>
+          </div>
+
+          <div id="chart-l1" style={{ width: '100%', height: 420, marginBottom: 0 }} />
+
+          {/* 一句话总结 */}
+          <div style={{ padding: '14px 20px', background: mainOk ? '#22c55e15' : '#ef444415', borderRadius: 8, border: `1px solid ${mainOk ? '#22c55e44' : '#ef444444'}`, marginTop: 12 }}>
+            <span style={{ fontSize: 15, fontWeight: 700, color: mainOk ? C.green : C.red }}>
+              {mainOk ? '✅ 战略看多' : '🚨 战略看空'}
             </span>
-          </div>
-          <div style={{ fontSize: 11, color: '#666' }}>
-            ⚠️ 均线基于周线收盘价计算(MA5/MA10/MA20)。全市场融资为stock.margin聚合。主图指数: 上证/深证/创业板。
+            <span style={{ fontSize: 13, color: '#aaa', marginLeft: 12 }}>
+              {mainOk
+                ? `${l1Period === 'weekly' ? '周' : '日'}线${maArrangement.text === '多头排列 ↗' ? '均线多头排列+主力净流入' : '主力在场但均线未形成多头'}——${maArrangement.text === '多头排列 ↗' ? '可积极操作' : '等均线确认后加仓'}`
+                : `主力离场+${l1Period === 'weekly' ? '周' : '日'}线${maArrangement.text}——严格防守，等待主力回流`}
+            </span>
           </div>
         </div>
       )}
@@ -633,13 +722,17 @@ export default function ReplayPage() {
                   const latest = Number(m[0]?.total_margin || 0) / 1e8
                   return <InfoCard label="全市场融资(亿)" value={latest.toFixed(0)} valueColor={C.muted} />
                 })()}
+                {topListRecent && (
+                  <InfoCard label="龙虎榜机构占比" value={`${topListRecent.inst_ratio}% (${topListRecent.inst_count}/${topListRecent.total})`}
+                    valueColor={topListRecent.inst_ratio > 50 ? C.teal : topListRecent.inst_ratio > 30 ? C.amber : C.rose} />
+                )}
               </div>
             </>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>情绪数据加载中...</div>
           )}
           <div style={{ fontSize: 11, color: '#666', marginTop: 16 }}>
-            ⚠️ 连板高度/炸板率需实时数据源接入。财经媒体热度预留给未来爬虫接入。涨跌比&gt;3=散户狂热, &lt;0.3=散户恐慌。
+            ⚠️ 连板高度/炸板率需实时数据源接入。财经媒体热度预留给未来爬虫接入。
           </div>
         </div>
       )}
@@ -686,6 +779,19 @@ export default function ReplayPage() {
                   🏥 板块健康度需成分股资金流对比（板块内上涨家数占比+超大单同步流入票数占比）
                 </div>
               </div>
+              {/* Q2板块——主力加码但未涨，即将启动 */}
+              {sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).length > 0 && (
+                <div style={{ marginTop: 12, padding: '12px 16px', background: C.teal + '15', borderRadius: 8, border: `1px solid ${C.teal}44` }}>
+                  <div style={{ fontSize: 13, color: C.teal, marginBottom: 6 }}>👀 即将启动（主力加码 + 涨幅未启动）</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).slice(0, 6).map((r: any, i: number) => (
+                      <span key={i} style={{ fontSize: 12, padding: '3px 10px', background: C.card, borderRadius: 4, color: '#aaa' }}>
+                        {r.name} <span style={{ color: C.green }}>{fmtMoney(r.main)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>板块数据加载中...</div>
@@ -709,6 +815,19 @@ export default function ReplayPage() {
 
           {stock ? (
             <div>
+              {/* 一句话诊断（L5 断点4修复） */}
+              <div style={{ padding: '14px 20px', marginBottom: 14, borderRadius: 10,
+                background: phaseData.level >= 2 ? '#22c55e10' : phaseData.level <= -1 ? '#ef444410' : '#1e293b',
+                border: `1px solid ${phaseData.level >= 2 ? '#22c55e44' : phaseData.level <= -1 ? '#ef444444' : C.border}` }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: phaseData.color }}>
+                  {phaseData.level >= 2 ? '🟢 可操作' : phaseData.level <= -1 ? '🔴 回避' : '🟡 观望'}
+                </span>
+                <span style={{ fontSize: 14, color: '#ccc', marginLeft: 10 }}>
+                  {stockCode} · {phaseData.phase} · PE {stock.pe?.toFixed(1)} (分位{stock.pe_rank?.toFixed(0)}%)
+                  · 承接力{'⭐'.repeat(supportData.stars)}
+                </span>
+                <span style={{ fontSize: 13, color: '#aaa', marginLeft: 10 }}>{phaseData.advice}</span>
+              </div>
               {/* 主力阶段卡片 */}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div style={{ background: C.card, borderRadius: 8, padding: '14px 18px', minWidth: 200 }}>
@@ -836,6 +955,44 @@ export default function ReplayPage() {
             </div>
           )}
 
+          {/* 龙虎榜整合 */}
+          {stockTopList?.summary?.length > 0 && (
+            <div style={{ marginBottom: 16, padding: '14px 18px', background: C.card, borderRadius: 10, border: `1px solid ${C.amber}44` }}>
+              <div style={{ fontSize: 14, color: C.amber, marginBottom: 10 }}>🐉 龙虎榜（近60日）</div>
+              {stockTopList.summary.slice(-5).reverse().map((r: any, i: number) => (
+                <div key={i} style={{ fontSize: 12, color: '#aaa', marginBottom: 6, padding: '6px 8px', background: '#0f172a', borderRadius: 4 }}>
+                  <span style={{ color: '#888' }}>{String(r.trade_date).slice(0, 10)}</span>
+                  {' '}涨跌: <span style={{ color: Number(r.change_rate) > 0 ? C.green : C.red, fontWeight: 600 }}>{fmtPct(r.change_rate)}</span>
+                  {' '}买入: <span style={{ color: C.green }}>{fmtMoney(r.billboard_buy)}</span>
+                  {' '}卖出: <span style={{ color: C.red }}>{fmtMoney(r.billboard_sell)}</span>
+                  {' '}净额: <span style={{ color: Number(r.billboard_net) > 0 ? C.green : C.red, fontWeight: 600 }}>{fmtMoney(r.billboard_net)}</span>
+                  {r.explain_text && (
+                    <span style={{ color: (r.explain_text || '').includes('机构') ? C.teal : C.rose, marginLeft: 8, fontWeight: 600 }}>
+                      {r.explain_text}
+                    </span>
+                  )}
+                  <div style={{ color: '#666', fontSize: 11 }}>{r.explanation}</div>
+                </div>
+              ))}
+              {/* 席位明细 */}
+              {stockTopList.seats?.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>席位明细（近60日）</div>
+                  {stockTopList.seats.slice(-10).reverse().map((s: any, i: number) => (
+                    <div key={i} style={{ fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                      <span>{s.seat_name?.slice(0, 20)}</span>
+                      <span>
+                        买 <span style={{ color: C.green }}>{fmtMoney(s.buy_amt)}</span>
+                        {' '}卖 <span style={{ color: C.red }}>{fmtMoney(s.sell_amt)}</span>
+                        {' '}成功率 <span style={{ color: s.rise_prob_3d > 50 ? C.green : C.muted }}>{s.rise_prob_3d?.toFixed(0)}%</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
           {/* 选股器 */}
           <div style={{ marginTop: 24, padding: 16, background: C.card, borderRadius: 10, border: `1px solid ${C.border}` }}>
             <div style={{ fontSize: 14, color: C.amber, marginBottom: 10 }}>🔍 跟庄选股器</div>
@@ -895,18 +1052,62 @@ export default function ReplayPage() {
                 {i + 1}. {r.name} — 主力{fmtMoney(r.main)}，5日涨幅{fmtPct(r.chg5d)}
               </div>
             ))}
+            {/* Q2 观察池 */}
+            {sectors?.sectors && (() => {
+              const q2 = sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).slice(0, 3)
+              return q2.length > 0 ? (
+                <div style={{ fontSize: 12, color: C.teal, marginTop: 6 }}>
+                  👀 观察池（主力加+未涨）：{q2.map((r: any) => r.name).join(' · ')}
+                </div>
+              ) : null
+            })()}
             {!sectors?.sectors?.length && <div style={{ color: C.muted, fontSize: 12 }}>板块数据加载中...</div>}
+          </div>
+
+          {/* 操作清单（L6 断点5修复） */}
+          <div style={{ padding: '12px 16px', background: C.card, borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: C.amber, marginBottom: 8 }}>📋 明日操作清单</div>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ color: '#888', borderBottom: `1px solid ${C.border}` }}>
+                  <th style={{ ...th, width: '20%' }}>动作</th>
+                  <th style={{ ...th, width: '30%' }}>标的/板块</th>
+                  <th style={{ ...th, width: '25%' }}>条件</th>
+                  <th style={{ ...th, width: '25%' }}>仓位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ ...td, color: C.green, fontWeight: 600 }}>低吸</td>
+                  <td style={td}>{sectors?.sectors?.[0]?.name || '—'} 板块龙头</td>
+                  <td style={{ ...td, color: '#aaa' }}>回踩VWAP不破</td>
+                  <td style={{ ...td, color: pos.color }}>{pos.pct > 50 ? '30%' : '20%'}</td>
+                </tr>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ ...td, color: C.amber, fontWeight: 600 }}>观察</td>
+                  <td style={td}>{sectors?.sectors?.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1)[0]?.name || '—'}</td>
+                  <td style={{ ...td, color: '#aaa' }}>放量突破前高</td>
+                  <td style={{ ...td, color: C.muted }}>试仓 10%</td>
+                </tr>
+                <tr>
+                  <td style={{ ...td, color: C.red, fontWeight: 600 }}>止损</td>
+                  <td style={td}>所有持仓</td>
+                  <td style={{ ...td, color: '#aaa' }}>跌破成本 -3%</td>
+                  <td style={{ ...td, color: C.red }}>无条件离场</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* 风险预警 */}
           <div style={{ padding: '12px 16px', background: C.card, borderRadius: 8, border: `1px solid ${C.red}44` }}>
             <div style={{ fontSize: 13, color: C.red, marginBottom: 6 }}>🚨 风险预警</div>
             <div style={{ fontSize: 12, color: '#aaa' }}>
-              {mainOk ? '✅ 周线主力仍在' : '⚠️ 周线主力净流出——注意仓位'}
+              {mainOk ? '✅ 主力在场' : '⚠️ 主力离场'}
               {' · '}
-              {bRatio > 3 ? '⚠️ 散户过热——警惕回调' : bRatio < 0.3 ? '✅ 散户恐慌——机会窗口' : '🟡 情绪中性'}
+              {bRatio > 3 ? '⚠️ 散户过热' : bRatio < 0.3 ? '✅ 散户恐慌=机会' : '🟡 情绪中性'}
               {' · '}
-              持仓股诊断请至Layer 5逐个查看
+              止损纪律：单票-3%无条件离场 · 总回撤-5%减半仓
             </div>
           </div>
         </div>
