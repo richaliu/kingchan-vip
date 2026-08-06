@@ -14,12 +14,27 @@ const LINE_MAP: [string, string][] = [
 
 const BB_COLOR: Record<string, string> = { 多方: '#c00', 空方: '#0a8', 中性: '#888' }
 
+// 潜台词去重：删除与摘要重复的部分（避免两列复读）
+function cleanSubtext(sub: string | null | undefined, sum: string | null | undefined): string {
+  if (!sub) return ''
+  let s = sub.trim()
+  if (sum) {
+    const t = sum.trim()
+    if (t && s.includes(t)) s = s.replace(t, '')
+  }
+  // 清理残留的重复标点/引号
+  s = s.replace(/^[,，。;；:：、\s]+/, '').replace(/[,，。;；:：、\s]+$/, '')
+  return s
+}
+
 export default function CctvPage() {
   const [months, setMonths] = useState<{ month: string; cnt: number }[]>([])
   const [month, setMonth] = useState('')
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
+  const [hoverIdx, setHoverIdx] = useState<number | null>(null)
+  const [filters, setFilters] = useState<{ line?: string; bull?: string }>({})
 
   useEffect(() => {
     fetch('/api/cctv_labels?limit=1')
@@ -49,6 +64,20 @@ export default function CctvPage() {
         setErr('加载失败')
       })
   }, [month])
+
+  // 表头标签筛选
+  const visibleRows = useMemo(() => {
+    if (!filters.line && !filters.bull) return rows
+    return rows.filter((r) => {
+      if (filters.line && !r[filters.line]) return false
+      if (filters.bull && r.bull_bear !== filters.bull) return false
+      return true
+    })
+  }, [rows, filters])
+
+  const toggleFilter = (kind: 'line' | 'bull', key: string) => {
+    setFilters((f) => (f[kind] === key ? { ...f, [kind]: undefined } : { ...f, [kind]: key }))
+  }
 
   const stat = useMemo(() => {
     const s = { total: rows.length, line: { line_01: 0, line_02: 0, line_03: 0, line_04: 0 }, bull: { 多方: 0, 空方: 0, 中性: 0 }, top: rows[0] }
@@ -81,21 +110,56 @@ export default function CctvPage() {
         </select>
         {loading && <span style={{ color: '#888', fontSize: 13 }}>加载中…</span>}
         {err && <span style={{ color: '#c00', fontSize: 13 }}>⚠️ {err}</span>}
+        {(filters.line || filters.bull) && (
+          <button
+            onClick={() => setFilters({})}
+            style={{ marginLeft: 4, padding: '5px 12px', fontSize: 13, border: '1px solid #c00', borderRadius: 6, background: '#fff', color: '#c00', cursor: 'pointer' }}
+          >
+            清除筛选 ✕
+          </button>
+        )}
       </div>
 
       {stat.total > 0 && (
         <div style={{ display: 'flex', gap: 10, marginBottom: 14, flexWrap: 'wrap' }}>
           <div style={{ border: '1px solid #e8e0d0', borderRadius: 8, padding: '8px 14px', background: '#fdfbf6', fontSize: 13 }}>
             共 <b style={{ color: '#8b4513' }}>{stat.total}</b> 条
+            {visibleRows.length !== stat.total && <span style={{ color: '#c00' }}>（筛出 {visibleRows.length}）</span>}
           </div>
           {LINE_MAP.map(([k, label]) => (
-            <div key={k} style={{ border: '1px solid #e8e0d0', borderRadius: 8, padding: '8px 14px', background: '#fdfbf6', fontSize: 13 }}>
+            <div
+              key={k}
+              onClick={() => toggleFilter('line', k)}
+              style={{
+                border: `1px solid ${filters.line === k ? '#8b4513' : '#e8e0d0'}`,
+                borderRadius: 8,
+                padding: '8px 14px',
+                background: filters.line === k ? '#f3e9d8' : '#fdfbf6',
+                fontSize: 13,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
               {label} <b style={{ color: '#8b4513' }}>{stat.line[k as keyof typeof stat.line]}</b>
+              {filters.line === k && ' ✓'}
             </div>
           ))}
           {(Object.keys(stat.bull) as (keyof typeof stat.bull)[]).map((k) => (
-            <div key={k} style={{ border: '1px solid #e8e0d0', borderRadius: 8, padding: '8px 14px', background: '#fdfbf6', fontSize: 13 }}>
+            <div
+              key={k}
+              onClick={() => toggleFilter('bull', k)}
+              style={{
+                border: `1px solid ${filters.bull === k ? BB_COLOR[k] : '#e8e0d0'}`,
+                borderRadius: 8,
+                padding: '8px 14px',
+                background: filters.bull === k ? '#f3e9d8' : '#fdfbf6',
+                fontSize: 13,
+                cursor: 'pointer',
+                userSelect: 'none',
+              }}
+            >
               {k} <b style={{ color: BB_COLOR[k] }}>{stat.bull[k]}</b>
+              {filters.bull === k && ' ✓'}
             </div>
           ))}
         </div>
@@ -135,12 +199,40 @@ export default function CctvPage() {
             </tr>
           </thead>
           <tbody>
-            {rows.map((r, i) => (
+            {visibleRows.map((r, i) => (
               <tr key={i} style={{ background: i % 2 ? '#fcfaf5' : '#fff' }}>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.date?.slice(5)}</td>
-                <td style={{ ...td, minWidth: 260 }}>
-                  {r.title || '—'}
+                <td
+                  style={{ ...td, minWidth: 260, position: 'relative' }}
+                  onMouseEnter={() => setHoverIdx(i)}
+                  onMouseLeave={() => setHoverIdx(null)}
+                >
+                  <span style={{ cursor: 'help', borderBottom: '1px dashed #b8860b' }}>{r.title || '—'}</span>
                   {r.anomaly && <span style={{ color: '#c00', fontSize: 11 }}> ⚠{r.anomaly}</span>}
+                  {hoverIdx === i && r.content && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        left: 0,
+                        top: '100%',
+                        zIndex: 50,
+                        width: 460,
+                        maxHeight: 280,
+                        overflowY: 'auto',
+                        background: '#fffdf6',
+                        border: '1px solid #d8cfc0',
+                        borderRadius: 6,
+                        padding: '10px 12px',
+                        fontSize: 12,
+                        lineHeight: 1.7,
+                        color: '#333',
+                        boxShadow: '0 6px 16px rgba(0,0,0,0.15)',
+                        whiteSpace: 'normal',
+                      }}
+                    >
+                      {r.content}
+                    </div>
+                  )}
                 </td>
                 <td style={td}>{r.section}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
@@ -176,7 +268,7 @@ export default function CctvPage() {
                     </>
                   )
                 })()}
-                <td style={{ ...td, minWidth: 200, color: '#555' }}>{r.subtext || '—'}</td>
+                <td style={{ ...td, minWidth: 200, color: '#555' }}>{cleanSubtext(r.subtext, r.summary) || '—'}</td>
                 <td style={td}>{r.summary || '—'}</td>
               </tr>
             ))}
@@ -184,7 +276,7 @@ export default function CctvPage() {
         </table>
       </div>
 
-      {!loading && rows.length === 0 && !err && (
+      {!loading && visibleRows.length === 0 && !err && (
         <div style={{ textAlign: 'center', color: '#999', padding: 40 }}>该月暂无打标数据</div>
       )}
     </div>
