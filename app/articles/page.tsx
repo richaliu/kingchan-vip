@@ -65,7 +65,7 @@ export default function ArticlesPage() {
               onClick={() => { setPoemOnly(!poemOnly); setPage(1) }}
               className={`px-3 py-1.5 rounded-lg text-sm border transition-colors ${poemOnly ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40' : 'bg-slate-800/60 text-slate-400 border-slate-700'}`}
             >
-              🎋 诗词
+              🌺 诗词
             </button>
           </div>
         </div>
@@ -98,9 +98,9 @@ export default function ArticlesPage() {
                   className={`w-full text-left px-4 py-2.5 hover:bg-slate-800/60 transition-colors ${selFile === it.file ? 'bg-slate-800/80 border-l-2 border-amber-500' : 'border-l-2 border-transparent'}`}
                 >
                   <div className="flex items-start gap-2">
-                    {it.poem && <span className="text-emerald-500 text-sm mt-0.5">🎋</span>}
+                    {it.poem && <span className="text-rose-400 text-sm mt-0.5">🌺</span>}
                     <div className="min-w-0">
-                      <p className="text-sm text-slate-200 leading-snug truncate">{it.poem ? it.title.replace(/^🎋\s*/, '') : it.title}</p>
+                      <p className="text-sm text-slate-200 leading-snug truncate">{it.poem ? it.title.replace(/^[🎋🌺]\s*/, '') : it.title}</p>
                       {it.date && <p className="text-[10px] text-slate-600 mt-0.5">{it.date}</p>}
                       {it.tags && it.tags.length > 0 && (
                         <div className="flex flex-wrap gap-1 mt-1">
@@ -138,7 +138,7 @@ export default function ArticlesPage() {
               )}
               {!artLoading && article?.found && (
                 <article>
-                  <h1 className="text-lg font-bold text-slate-100 mb-2">{article.poem ? '🎋 ' : ''}{article.file.replace(/\.md$/, '').replace(/^🎋\s*/, '')}</h1>
+                  <h1 className="text-lg font-bold text-slate-100 mb-2">{article.poem ? '🌺 ' : ''}{article.file.replace(/\.md$/, '').replace(/^[🎋🌺]\s*/, '')}</h1>
                   <div className="border-b border-slate-800 mb-4 pb-3">
                     <span className="text-[11px] text-slate-600">来源：缠论全集.chm{article.poem ? ' · 诗词' : ''}</span>
                     {article.tags && article.tags.length > 0 && (
