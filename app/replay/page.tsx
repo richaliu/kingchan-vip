@@ -159,6 +159,8 @@ export default function ReplayPage() {
   const [loading, setLoading] = useState(false)
   const [l1Index, setL1Index] = useState('sh000001')   // 大盘方向：指数
   const [l1Period, setL1Period] = useState('weekly')    // 大盘方向：周期 weekly|daily
+  const [topListRecent, setTopListRecent] = useState<any>(null)  // 全市场龙虎榜
+  const [stockTopList, setStockTopList] = useState<any>(null)    // 个股龙虎榜
   const ecReady = useRef(false)
   const chartRefs = useRef<Record<string, any>>({})
 
@@ -176,15 +178,19 @@ export default function ReplayPage() {
     fetch('/api/replay/macro').then(r => r.json()).then(setMacro).catch(() => {})
     fetch('/api/replay/sectors').then(r => r.json()).then(setSectors).catch(() => {})
     fetch('/api/replay/sentiment').then(r => r.json()).then(setSentiment).catch(() => {})
+    fetch('/api/replay/top_list/recent?days=1').then(r => r.json()).then(setTopListRecent).catch(() => {})
   }
 
   const searchStock = (code: string) => {
     if (!code.trim()) return
     setLoading(true)
     setStock(null)
+    setStockTopList(null)
     fetch(`/api/replay/stock?code=${encodeURIComponent(code.trim())}&days=60`)
       .then(r => r.json()).then(d => { setStock(d); setLoading(false) })
       .catch(() => setLoading(false))
+    fetch(`/api/replay/top_list?code=${encodeURIComponent(code.trim())}&days=60`)
+      .then(r => r.json()).then(setStockTopList).catch(() => {})
   }
 
   // ===================== Layer 1: 大盘方向图表 =====================
@@ -697,13 +703,17 @@ export default function ReplayPage() {
                   const latest = Number(m[0]?.total_margin || 0) / 1e8
                   return <InfoCard label="全市场融资(亿)" value={latest.toFixed(0)} valueColor={C.muted} />
                 })()}
+                {topListRecent && (
+                  <InfoCard label="龙虎榜机构占比" value={`${topListRecent.inst_ratio}% (${topListRecent.inst_count}/${topListRecent.total})`}
+                    valueColor={topListRecent.inst_ratio > 50 ? C.teal : topListRecent.inst_ratio > 30 ? C.amber : C.rose} />
+                )}
               </div>
             </>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>情绪数据加载中...</div>
           )}
           <div style={{ fontSize: 11, color: '#666', marginTop: 16 }}>
-            ⚠️ 连板高度/炸板率需实时数据源接入。财经媒体热度预留给未来爬虫接入。涨跌比&gt;3=散户狂热, &lt;0.3=散户恐慌。
+            ⚠️ 连板高度/炸板率需实时数据源接入。财经媒体热度预留给未来爬虫接入。
           </div>
         </div>
       )}
@@ -897,6 +907,44 @@ export default function ReplayPage() {
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>
               {loading ? '分析中...' : '输入股票代码开始诊断'}
+            </div>
+          )}
+
+          {/* 龙虎榜整合 */}
+          {stockTopList?.summary?.length > 0 && (
+            <div style={{ marginBottom: 16, padding: '14px 18px', background: C.card, borderRadius: 10, border: `1px solid ${C.amber}44` }}>
+              <div style={{ fontSize: 14, color: C.amber, marginBottom: 10 }}>🐉 龙虎榜（近60日）</div>
+              {stockTopList.summary.slice(-5).reverse().map((r: any, i: number) => (
+                <div key={i} style={{ fontSize: 12, color: '#aaa', marginBottom: 6, padding: '6px 8px', background: '#0f172a', borderRadius: 4 }}>
+                  <span style={{ color: '#888' }}>{String(r.trade_date).slice(0, 10)}</span>
+                  {' '}涨跌: <span style={{ color: Number(r.change_rate) > 0 ? C.green : C.red, fontWeight: 600 }}>{fmtPct(r.change_rate)}</span>
+                  {' '}买入: <span style={{ color: C.green }}>{fmtMoney(r.billboard_buy)}</span>
+                  {' '}卖出: <span style={{ color: C.red }}>{fmtMoney(r.billboard_sell)}</span>
+                  {' '}净额: <span style={{ color: Number(r.billboard_net) > 0 ? C.green : C.red, fontWeight: 600 }}>{fmtMoney(r.billboard_net)}</span>
+                  {r.explain_text && (
+                    <span style={{ color: (r.explain_text || '').includes('机构') ? C.teal : C.rose, marginLeft: 8, fontWeight: 600 }}>
+                      {r.explain_text}
+                    </span>
+                  )}
+                  <div style={{ color: '#666', fontSize: 11 }}>{r.explanation}</div>
+                </div>
+              ))}
+              {/* 席位明细 */}
+              {stockTopList.seats?.length > 0 && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ fontSize: 12, color: '#888', marginBottom: 4 }}>席位明细（近60日）</div>
+                  {stockTopList.seats.slice(-10).reverse().map((s: any, i: number) => (
+                    <div key={i} style={{ fontSize: 11, color: '#666', display: 'flex', justifyContent: 'space-between', padding: '2px 0' }}>
+                      <span>{s.seat_name?.slice(0, 20)}</span>
+                      <span>
+                        买 <span style={{ color: C.green }}>{fmtMoney(s.buy_amt)}</span>
+                        {' '}卖 <span style={{ color: C.red }}>{fmtMoney(s.sell_amt)}</span>
+                        {' '}成功率 <span style={{ color: s.rise_prob_3d > 50 ? C.green : C.muted }}>{s.rise_prob_3d?.toFixed(0)}%</span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 
