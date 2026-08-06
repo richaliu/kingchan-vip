@@ -78,6 +78,11 @@ export default function ArticlesPage() {
     }
     while (i < lines.length) {
       const ln = lines[i]
+      // 跳过日期行（标题区已显示）
+      if (/^>\s*📅/.test(ln.trim()) || /^\s*$/.test(ln)) {
+        i++
+        continue
+      }
       if (isShort(ln) && i + 1 < lines.length && isShort(lines[i + 1])) {
         const poem = [ln.trim()]
         let j = i + 1
