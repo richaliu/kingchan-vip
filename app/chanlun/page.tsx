@@ -46,8 +46,8 @@ export default function ChanlunPage() {
     if (!libReady || !graph || !chartRef.current) return
     const w = window as any
     const chart = w.echarts.init(chartRef.current)
-    const LV_COLOR: Record<number, string> = { 1: '#f59e0b', 2: '#3b82f6', 3: '#10b981' }
-    const LV_NAME: Record<number, string> = { 1: '一级·入门', 2: '二级·主线', 3: '三级·收官' }
+    const LV_COLOR: Record<number, string> = { 1: '#f59e0b', 2: '#3b82f6', 3: '#10b981', 4: '#64748b' }
+    const LV_NAME: Record<number, string> = { 1: '一级·入门', 2: '二级·主线', 3: '三级·收官', 4: '四级·其他' }
     const nodes = graph.nodes.map(n => {
       const lv = (n as any).level || 0
       return {
@@ -67,7 +67,7 @@ export default function ChanlunPage() {
         const lv = (p.data as any).level
         return `${p.data.name}<br/>度数: ${p.data.value || ''}${LV_NAME[lv] ? `<br/>级别: ${LV_NAME[lv]}` : ''}`
       } },
-      legend: { show: true, top: 0, textStyle: { color: '#94a3b8', fontSize: 11 }, data: ['一级·入门', '二级·主线', '三级·收官', '未分级'] },
+      legend: { show: true, top: 0, textStyle: { color: '#94a3b8', fontSize: 11 }, data: ['一级·入门', '二级·主线', '三级·收官', '四级·其他'] },
       series: [{
         type: 'graph',
         layout: 'force',
