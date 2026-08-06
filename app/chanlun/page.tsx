@@ -46,18 +46,28 @@ export default function ChanlunPage() {
     if (!libReady || !graph || !chartRef.current) return
     const w = window as any
     const chart = w.echarts.init(chartRef.current)
-    const nodes = graph.nodes.map(n => ({
-      id: n.id,
-      name: n.name,
-      symbolSize: Math.min(8 + Math.sqrt(n.degree) * 2, 40),
-      category: n.type || 'concept',
-      value: n.degree,
-    }))
+    const LV_COLOR: Record<number, string> = { 1: '#f59e0b', 2: '#3b82f6', 3: '#10b981' }
+    const LV_NAME: Record<number, string> = { 1: '一级·入门', 2: '二级·主线', 3: '三级·收官' }
+    const nodes = graph.nodes.map(n => {
+      const lv = (n as any).level || 0
+      return {
+        id: n.id,
+        name: n.name,
+        symbolSize: Math.min(8 + Math.sqrt(n.degree) * 2, 40),
+        category: LV_NAME[lv] || '未分级',
+        value: n.degree,
+        level: lv,
+        itemStyle: { color: LV_COLOR[lv] || '#64748b' },
+      }
+    })
     const cats = [...new Set(nodes.map(n => n.category))].map(c => ({ name: c }))
     chart.setOption({
       backgroundColor: 'transparent',
-      tooltip: { formatter: (p: any) => `${p.data.name}<br/>度数: ${p.data.value || ''}` },
-      legend: { show: false },
+      tooltip: { formatter: (p: any) => {
+        const lv = (p.data as any).level
+        return `${p.data.name}<br/>度数: ${p.data.value || ''}${LV_NAME[lv] ? `<br/>级别: ${LV_NAME[lv]}` : ''}`
+      } },
+      legend: { show: true, top: 0, textStyle: { color: '#94a3b8', fontSize: 11 }, data: ['一级·入门', '二级·主线', '三级·收官', '未分级'] },
       series: [{
         type: 'graph',
         layout: 'force',
@@ -182,6 +192,9 @@ export default function ChanlunPage() {
                   <div className="rounded-lg bg-slate-800/40 border border-slate-700/40 p-3">
                     <p className="text-sm text-slate-300">
                       <span className="text-amber-400 font-semibold">{entityData.name}</span>
+                      {entityData.level === 1 && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-amber-500/20 text-amber-400 border border-amber-500/30">一级·入门</span>}
+                      {entityData.level === 2 && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-blue-500/20 text-blue-400 border border-blue-500/30">二级·主线</span>}
+                      {entityData.level === 3 && <span className="ml-2 text-[10px] px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">三级·收官</span>}
                       <span className="text-slate-500"> · 关联 {entityData.degree} 个概念 · 共提及 {entityData.total_relation_mentions} 次</span>
                     </p>
                   </div>
