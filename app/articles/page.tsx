@@ -29,6 +29,12 @@ export default function ArticlesPage() {
   const [panelOpen, setPanelOpen] = useState(true)
   const size = 50
 
+  // 打开默认加载开篇（神州自有中天日）
+  useEffect(() => {
+    openArticle('神州自有中天日，万国衣冠舞九韶.md')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   useEffect(() => {
     setLoading(true)
     const params = new URLSearchParams({ size: String(size), page: String(page) })
@@ -54,29 +60,71 @@ export default function ArticlesPage() {
 
   const totalPages = Math.max(1, Math.ceil(total / size))
 
-  // 渲染正文（评论区小字分离）
+  // 渲染正文（高端排版：诗句居中、评论区小字、链接小字）
   const renderContent = (content: string) => {
     const idx = content.indexOf('## 💬 评论区')
     const body = idx >= 0 ? content.slice(0, idx) : content
     const comments = idx >= 0 ? content.slice(idx) : ''
     const linkM = content.match(/<sub>([\s\S]*?)<\/sub>/)
     const linkText = linkM ? linkM[1] : ''
+
+    // 诗句识别：连续短行（去掉标点 5/7 字）→ 居中展示
+    const lines = body.split('\n')
+    const blocks: { type: 'para' | 'poem'; text: string }[] = []
+    let i = 0
+    const isShort = (ln: string) => {
+      const s = ln.trim().replace(/[^\u4e00-\u9fffA-Za-z0-9]/g, '')
+      return s.length >= 3 && s.length <= 16 && ln.trim() !== ''
+    }
+    while (i < lines.length) {
+      const ln = lines[i]
+      if (isShort(ln) && i + 1 < lines.length && isShort(lines[i + 1])) {
+        const poem = [ln.trim()]
+        let j = i + 1
+        while (j < lines.length && isShort(lines[j])) {
+          poem.push(lines[j].trim())
+          j++
+        }
+        blocks.push({ type: 'poem', text: poem.join('\n') })
+        i = j
+      } else {
+        if (ln.trim()) blocks.push({ type: 'para', text: ln })
+        i++
+      }
+    }
+
     return (
       <>
-        <div className="whitespace-pre-wrap break-words leading-relaxed text-[13px]">
-          {body}
+        <div className="space-y-5">
+          {blocks.map((b, bi) =>
+            b.type === 'poem' ? (
+              <div key={bi} className="my-8 text-center">
+                <div className="inline-block border-y border-[#8b4513]/20 py-4 px-8">
+                  {b.text.split('\n').map((pl, pi) => (
+                    <p key={pi} className="font-kai text-[15px] leading-[2.2] tracking-[0.2em] text-[#8b4513]/90 whitespace-pre">
+                      {pl}
+                    </p>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <p key={bi} className="font-kai text-[14px] leading-[2.1] tracking-[0.05em] text-[#4a4238]/90 text-justify">
+                {b.text}
+              </p>
+            )
+          )}
         </div>
         {comments && (
-          <div className="mt-5 pt-2 border-t border-dashed border-[#8b4513]/25">
-            <p className="text-[11px] text-[#8b4513]/50 mb-1.5">💬 评论区</p>
+          <div className="mt-8 pt-3 border-t border-dashed border-[#8b4513]/25">
+            <p className="text-[11px] text-[#8b4513]/50 mb-2 tracking-widest">💬 评论区</p>
             <div className="whitespace-pre-wrap break-words text-[11px] text-[#8b4513]/45 leading-relaxed">
               {comments.replace(/^## 💬 评论区/, '').replace(/---\s*$/, '')}
             </div>
           </div>
         )}
         {linkText && (
-          <div className="mt-4 pt-2 border-t border-dashed border-[#8b4513]/20">
-            <span className="text-[10px] text-[#8b4513]/40">{linkText}</span>
+          <div className="mt-6 pt-2 border-t border-dashed border-[#8b4513]/20">
+            <span className="text-[10px] text-[#8b4513]/35">{linkText}</span>
           </div>
         )}
       </>
@@ -177,23 +225,29 @@ export default function ArticlesPage() {
           )}
           {!artLoading && article?.found && (
             <article>
-              {/* 标题 + 日期 */}
-              <header className="mb-5">
-                <h1 className="font-brush text-2xl text-[#8b4513] leading-snug">
+              {/* 标题区：高端大气 */}
+              <header className="mb-8 text-center">
+                <div className="flex items-center justify-center gap-3 mb-4" aria-hidden="true">
+                  <span className="h-px w-12 bg-[#8b4513]/30" />
+                  <span className="text-[#8b4513]/40 text-xs">{article.no || '缠中说禅'}</span>
+                  <span className="h-px w-12 bg-[#8b4513]/30" />
+                </div>
+                <h1 className="font-brush text-3xl md:text-4xl text-[#8b4513] leading-snug tracking-widest">
                   {article.poem ? '🌺 ' : ''}{article.file.replace(/\.md$/, '').replace(/^[🎋🌺]\s*/, '')}
                 </h1>
-                <div className="flex items-center gap-2 mt-1.5 text-[10px] text-[#8b4513]/50 font-kai">
+                <div className="flex items-center justify-center gap-3 mt-4 text-[11px] text-[#8b4513]/50 font-kai">
                   {article.date && <span>📅 {article.date}</span>}
                   {article.tags && article.tags.length > 0 && (
-                    <span className="flex gap-1">
+                    <span className="flex gap-1.5">
                       {article.tags.slice(0, 3).map((t: string) => (
-                        <span key={t} className="px-1.5 py-0.5 rounded-full bg-[#8b4513]/8 border border-[#8b4513]/15">{t}</span>
+                        <span key={t} className="px-2 py-0.5 rounded-full bg-[#8b4513]/8 border border-[#8b4513]/15">{t}</span>
                       ))}
                     </span>
                   )}
                 </div>
+                <div className="mx-auto mt-6 h-px w-24 bg-[#8b4513]/25" aria-hidden="true" />
               </header>
-              {/* 正文（小字） */}
+              {/* 正文（高端排版） */}
               {renderContent(article.content)}
             </article>
           )}
