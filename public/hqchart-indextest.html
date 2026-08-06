@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"><title>indextest</title></head>
+<body>
+<div id="k" style="width:900px;height:600px;border:1px solid #ccc"></div>
+<script src="/hqchart/jquery.min.js"></script>
+<script src="/hqchart/umychart.network.js"></script>
+<script src="/hqchart/umychart.full.js"></script>
+<script src="/hqchart/umychart.complier.js"></script>
+<script src="/hqchart/umychart.index.data.js"></script>
+<script src="/hqchart/umychart.style.js"></script>
+<script>
+window.onerror = function (msg) { document.title = 'JSERR:' + msg; };
+var chart = JSChart.Init(document.getElementById('k'));
+var option = {
+  Type: '历史K线图',
+  Symbol: '600519.sh',
+  Windows: [
+    { Index: 'MA', Modify: false, Change: false },
+    { Index: 'MACD', Modify: false, Change: false },
+    { Index: 'VOL', Modify: false, Change: false },
+  ],
+  KLine: { Right: 0, Period: 0, MaxReqeustDataCount: 500, PageSize: 50, IsShowTooltip: true },
+  NetworkFilter: function (data, cb) {
+    var cmd = data.Name || '';
+    if (cmd === 'ScriptIndex::RequestAuthorization') { cb({ code: 0, data: [] }); return; }
+    if (cmd === 'KLineChartContainer::RequestHistoryData') {
+      fetch('/api/kline?code=600519&period=daily&limit=500')
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          var rows = []; var y = null;
+          d.data.forEach(function (x) {
+            rows.push([parseInt(String(x.date).replace(/-/g, ''), 10), y, x.open, x.high, x.low, x.close, x.volume != null ? x.volume : x.vol, x.amount, 0]);
+            y = x.close;
+          });
+          cb({ code: 0, data: rows, Data: rows, symbol: '600519.sh', name: '600519' });
+        });
+    }
+  }
+};
+chart.SetOption(option);
+setTimeout(function () {
+  var cs = document.querySelectorAll('canvas');
+  var info = [];
+  cs.forEach(function (c) {
+    var img = c.getContext('2d').getImageData(0, 0, c.width, c.height).data;
+    var nb = 0;
+    for (var j = 0; j < img.length; j += 4) { if (img[j] > 40 || img[j + 1] > 40 || img[j + 2] > 40) nb++; }
+    info.push(nb);
+  });
+  document.title = 'canvas=' + cs.length + ' nonblack=' + info.join(',');
+}, 6000);
+</script>
+</body>
+</html>
