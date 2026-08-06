@@ -474,6 +474,16 @@ export default function ReplayPage() {
   const mainLabel = mainOk ? '主力在场' : '主力离场'
   const mainColor = mainOk ? C.green : C.red
 
+  // 主力净额 20日均值对比（L1 断点1修复）
+  const mainFlow20dAvg = (() => {
+    if (!macro?.fund_flow_all?.length) return null
+    const f = macro.fund_flow_all.slice(0, Math.min(20, macro.fund_flow_all.length))
+    if (f.length < 2) return null
+    const sum = f.reduce((s: number, r: any) => s + (Number(r.super || 0) + Number(r.large || 0)), 0)
+    return sum / f.length / 1e8
+  })()
+  const mainFlowRatio = mainFlow20dAvg && mainFlow20dAvg !== 0 ? mainFlowAmt / mainFlow20dAvg : null
+
   // ===================== Layer 0: 预警 =====================
   const alerts: { text: string; color: string }[] = []
   if (macro?.latest_main) {
@@ -593,9 +603,18 @@ export default function ReplayPage() {
               <div style={{ fontSize: 28, fontWeight: 800, color: mainColor }}>{mainLabel}</div>
               <div style={{ fontSize: 14, color: '#aaa', marginTop: 4 }}>
                 全市场主力单日净额：<span style={{ fontWeight: 700, color: mainColor }}>{mainFlowAmt.toFixed(1)}亿</span>
+                {mainFlowRatio && (
+                  <span style={{ fontSize: 12, marginLeft: 8, color: mainFlowRatio > 2 ? C.green : mainFlowRatio > 1 ? C.amber : C.muted }}>
+                    (20日均 {mainFlow20dAvg?.toFixed(0)}亿 的 {mainFlowRatio.toFixed(1)}x)
+                  </span>
+                )}
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
-                {mainOk ? '主力大举买入——市场有资金托底，回调即低吸机会' : '主力撤退——控制仓位，等待主力回流信号'}
+                {mainOk
+                  ? (mainFlowRatio && mainFlowRatio > 2
+                    ? `主力净额是平时的${mainFlowRatio.toFixed(0)}倍——大资金在动手，不是普通交易日`
+                    : '主力持续买入——市场有资金托底，回调即低吸机会')
+                  : '主力撤退——控制仓位，等待主力回流信号'}
               </div>
             </div>
             <div style={{ flex: 1, minWidth: 280, padding: '20px 24px', background: C.card, borderRadius: 10, borderLeft: `4px solid ${maArrangement.color}` }}>
@@ -760,6 +779,19 @@ export default function ReplayPage() {
                   🏥 板块健康度需成分股资金流对比（板块内上涨家数占比+超大单同步流入票数占比）
                 </div>
               </div>
+              {/* Q2板块——主力加码但未涨，即将启动 */}
+              {sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).length > 0 && (
+                <div style={{ marginTop: 12, padding: '12px 16px', background: C.teal + '15', borderRadius: 8, border: `1px solid ${C.teal}44` }}>
+                  <div style={{ fontSize: 13, color: C.teal, marginBottom: 6 }}>👀 即将启动（主力加码 + 涨幅未启动）</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                    {sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).slice(0, 6).map((r: any, i: number) => (
+                      <span key={i} style={{ fontSize: 12, padding: '3px 10px', background: C.card, borderRadius: 4, color: '#aaa' }}>
+                        {r.name} <span style={{ color: C.green }}>{fmtMoney(r.main)}</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
             </>
           ) : (
             <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>板块数据加载中...</div>
@@ -783,6 +815,19 @@ export default function ReplayPage() {
 
           {stock ? (
             <div>
+              {/* 一句话诊断（L5 断点4修复） */}
+              <div style={{ padding: '14px 20px', marginBottom: 14, borderRadius: 10,
+                background: phaseData.level >= 2 ? '#22c55e10' : phaseData.level <= -1 ? '#ef444410' : '#1e293b',
+                border: `1px solid ${phaseData.level >= 2 ? '#22c55e44' : phaseData.level <= -1 ? '#ef444444' : C.border}` }}>
+                <span style={{ fontSize: 16, fontWeight: 700, color: phaseData.color }}>
+                  {phaseData.level >= 2 ? '🟢 可操作' : phaseData.level <= -1 ? '🔴 回避' : '🟡 观望'}
+                </span>
+                <span style={{ fontSize: 14, color: '#ccc', marginLeft: 10 }}>
+                  {stockCode} · {phaseData.phase} · PE {stock.pe?.toFixed(1)} (分位{stock.pe_rank?.toFixed(0)}%)
+                  · 承接力{'⭐'.repeat(supportData.stars)}
+                </span>
+                <span style={{ fontSize: 13, color: '#aaa', marginLeft: 10 }}>{phaseData.advice}</span>
+              </div>
               {/* 主力阶段卡片 */}
               <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginBottom: 16 }}>
                 <div style={{ background: C.card, borderRadius: 8, padding: '14px 18px', minWidth: 200 }}>
@@ -1007,18 +1052,62 @@ export default function ReplayPage() {
                 {i + 1}. {r.name} — 主力{fmtMoney(r.main)}，5日涨幅{fmtPct(r.chg5d)}
               </div>
             ))}
+            {/* Q2 观察池 */}
+            {sectors?.sectors && (() => {
+              const q2 = sectors.sectors.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1).slice(0, 3)
+              return q2.length > 0 ? (
+                <div style={{ fontSize: 12, color: C.teal, marginTop: 6 }}>
+                  👀 观察池（主力加+未涨）：{q2.map((r: any) => r.name).join(' · ')}
+                </div>
+              ) : null
+            })()}
             {!sectors?.sectors?.length && <div style={{ color: C.muted, fontSize: 12 }}>板块数据加载中...</div>}
+          </div>
+
+          {/* 操作清单（L6 断点5修复） */}
+          <div style={{ padding: '12px 16px', background: C.card, borderRadius: 8, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, color: C.amber, marginBottom: 8 }}>📋 明日操作清单</div>
+            <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ color: '#888', borderBottom: `1px solid ${C.border}` }}>
+                  <th style={{ ...th, width: '20%' }}>动作</th>
+                  <th style={{ ...th, width: '30%' }}>标的/板块</th>
+                  <th style={{ ...th, width: '25%' }}>条件</th>
+                  <th style={{ ...th, width: '25%' }}>仓位</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ ...td, color: C.green, fontWeight: 600 }}>低吸</td>
+                  <td style={td}>{sectors?.sectors?.[0]?.name || '—'} 板块龙头</td>
+                  <td style={{ ...td, color: '#aaa' }}>回踩VWAP不破</td>
+                  <td style={{ ...td, color: pos.color }}>{pos.pct > 50 ? '30%' : '20%'}</td>
+                </tr>
+                <tr style={{ borderBottom: `1px solid ${C.border}` }}>
+                  <td style={{ ...td, color: C.amber, fontWeight: 600 }}>观察</td>
+                  <td style={td}>{sectors?.sectors?.filter((r: any) => Number(r.main) > 1e8 && (Number(r.chg5d) || 0) <= 1)[0]?.name || '—'}</td>
+                  <td style={{ ...td, color: '#aaa' }}>放量突破前高</td>
+                  <td style={{ ...td, color: C.muted }}>试仓 10%</td>
+                </tr>
+                <tr>
+                  <td style={{ ...td, color: C.red, fontWeight: 600 }}>止损</td>
+                  <td style={td}>所有持仓</td>
+                  <td style={{ ...td, color: '#aaa' }}>跌破成本 -3%</td>
+                  <td style={{ ...td, color: C.red }}>无条件离场</td>
+                </tr>
+              </tbody>
+            </table>
           </div>
 
           {/* 风险预警 */}
           <div style={{ padding: '12px 16px', background: C.card, borderRadius: 8, border: `1px solid ${C.red}44` }}>
             <div style={{ fontSize: 13, color: C.red, marginBottom: 6 }}>🚨 风险预警</div>
             <div style={{ fontSize: 12, color: '#aaa' }}>
-              {mainOk ? '✅ 周线主力仍在' : '⚠️ 周线主力净流出——注意仓位'}
+              {mainOk ? '✅ 主力在场' : '⚠️ 主力离场'}
               {' · '}
-              {bRatio > 3 ? '⚠️ 散户过热——警惕回调' : bRatio < 0.3 ? '✅ 散户恐慌——机会窗口' : '🟡 情绪中性'}
+              {bRatio > 3 ? '⚠️ 散户过热' : bRatio < 0.3 ? '✅ 散户恐慌=机会' : '🟡 情绪中性'}
               {' · '}
-              持仓股诊断请至Layer 5逐个查看
+              止损纪律：单票-3%无条件离场 · 总回撤-5%减半仓
             </div>
           </div>
         </div>
