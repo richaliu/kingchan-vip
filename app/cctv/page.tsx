@@ -152,12 +152,20 @@ export default function CctvPage() {
                 <td style={td}>{r.yanxing_part}</td>
                 <td style={td}>{r.nature}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {r.pos_weight}/{r.char_class}
-                  <div style={{ fontSize: 11, color: '#999' }}>score={r.score}</div>
-                  {r.meeting && <div style={{ fontSize: 11, color: '#8b4513' }}>📌{r.meeting}</div>}
-                  {r.country && <div style={{ fontSize: 11, color: '#555' }}>🌏{r.country}</div>}
-                  {r.province && <div style={{ fontSize: 11, color: '#555' }}>📍{r.province}</div>}
-                  {r.triangle && <div style={{ fontSize: 11, color: '#b8860b' }}>△{r.triangle}</div>}
+                  <div>
+                    {r.pos_weight}/{r.char_class}
+                    <span style={{ fontSize: 11, color: '#999' }}> · score={r.score}</span>
+                  </div>
+                  {r.meeting && (
+                    <div style={{ fontSize: 11, color: '#8b4513', marginTop: 2 }}>📌{r.meeting}</div>
+                  )}
+                  {(r.country || r.province || r.triangle) && (
+                    <div style={{ fontSize: 11, color: '#777', marginTop: 2 }}>
+                      {[r.country && `🌏${r.country}`, r.province && `📍${r.province}`, r.triangle && `△${r.triangle}`]
+                        .filter(Boolean)
+                        .join(' ')}
+                    </div>
+                  )}
                 </td>
                 <td style={{ ...td, minWidth: 200, color: '#555' }}>{r.subtext || '—'}</td>
                 <td style={td}>{r.summary || '—'}</td>
