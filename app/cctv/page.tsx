@@ -124,7 +124,7 @@ export default function CctvPage() {
               <th style={th}>性质</th>
               <th style={th}>信号</th>
               <th style={th}>潜台词</th>
-              <th style={th}>信度</th>
+              <th style={th}>摘要</th>
             </tr>
           </thead>
           <tbody>
@@ -133,7 +133,7 @@ export default function CctvPage() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.date?.slice(5)}</td>
                 <td style={{ ...td, minWidth: 260 }}>
                   {r.title || '—'}
-                  {r.new_expr && <span style={{ color: '#b8860b', fontSize: 11 }}> ⚑{r.new_expr}</span>}
+                  {r.keywords && <span style={{ color: '#b8860b', fontSize: 11 }}> ⚑{r.keywords.split(',')[0]}</span>}
                   {r.anomaly && <span style={{ color: '#c00', fontSize: 11 }}> ⚠{r.anomaly}</span>}
                 </td>
                 <td style={td}>{r.section}</td>
@@ -152,11 +152,15 @@ export default function CctvPage() {
                 <td style={td}>{r.yanxing_part}</td>
                 <td style={td}>{r.nature}</td>
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  {r.pos_weight}/{r.dur_weight}
-                  <div style={{ fontSize: 11, color: '#999' }}>score={r.signal_score}</div>
+                  {r.pos_weight}/{r.char_class}
+                  <div style={{ fontSize: 11, color: '#999' }}>score={r.score}</div>
+                  {r.meeting && <div style={{ fontSize: 11, color: '#8b4513' }}>📌{r.meeting}</div>}
+                  {r.country && <div style={{ fontSize: 11, color: '#555' }}>🌏{r.country}</div>}
+                  {r.province && <div style={{ fontSize: 11, color: '#555' }}>📍{r.province}</div>}
+                  {r.triangle && <div style={{ fontSize: 11, color: '#b8860b' }}>△{r.triangle}</div>}
                 </td>
                 <td style={{ ...td, minWidth: 200, color: '#555' }}>{r.subtext || '—'}</td>
-                <td style={td}>{(r.confidence ?? 0).toFixed(2)}</td>
+                <td style={td}>{r.summary || '—'}</td>
               </tr>
             ))}
           </tbody>
