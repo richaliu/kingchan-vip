@@ -14,16 +14,12 @@ const LINE_MAP: [string, string][] = [
 
 const BB_COLOR: Record<string, string> = { 多方: '#c00', 空方: '#0a8', 中性: '#888' }
 
-// 潜台词去重：删除与摘要重复的部分（避免两列复读）
-function cleanSubtext(sub: string | null | undefined, sum: string | null | undefined): string {
+// 潜台词精简（用户规则 2026-08）："——"前是标题复述/事实罗列，后面才是讲人话的潜台词 → 只留横杠后
+// 无横杠（如"十五五开局年+地方换届前…"）说明整段已是潜台词，保留全文
+function cleanSubtext(sub: string | null | undefined, _sum: string | null | undefined): string {
   if (!sub) return ''
-  let s = sub.trim()
-  if (sum) {
-    const t = sum.trim()
-    if (t && s.includes(t)) s = s.replace(t, '')
-  }
-  // 清理残留的重复标点/引号
-  s = s.replace(/^[,，。;；:：、\s]+/, '').replace(/[,，。;；:：、\s]+$/, '')
+  const s = sub.trim()
+  if (s.includes('——')) return s.split('——').slice(1).join('——').trim()
   return s
 }
 
