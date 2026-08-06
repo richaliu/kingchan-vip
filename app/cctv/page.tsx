@@ -122,7 +122,14 @@ export default function CctvPage() {
               <th style={th}>多空</th>
               <th style={th}>雁型</th>
               <th style={th}>性质</th>
-              <th style={th}>信号</th>
+              <th style={th}>位置</th>
+              <th style={th}>字数</th>
+              <th style={th}>分数</th>
+              <th style={th}>会议</th>
+              <th style={th}>地点</th>
+              <th style={th}>关键词①</th>
+              <th style={th}>关键词②</th>
+              <th style={th}>关键词③</th>
               <th style={th}>潜台词</th>
               <th style={th}>摘要</th>
             </tr>
@@ -133,7 +140,6 @@ export default function CctvPage() {
                 <td style={{ ...td, whiteSpace: 'nowrap' }}>{r.date?.slice(5)}</td>
                 <td style={{ ...td, minWidth: 260 }}>
                   {r.title || '—'}
-                  {r.keywords && <span style={{ color: '#b8860b', fontSize: 11 }}> ⚑{r.keywords.split(',')[0]}</span>}
                   {r.anomaly && <span style={{ color: '#c00', fontSize: 11 }}> ⚠{r.anomaly}</span>}
                 </td>
                 <td style={td}>{r.section}</td>
@@ -151,22 +157,25 @@ export default function CctvPage() {
                 <td style={{ ...td, color: BB_COLOR[r.bull_bear] || '#888', fontWeight: 600 }}>{r.bull_bear || '—'}</td>
                 <td style={td}>{r.yanxing_part}</td>
                 <td style={td}>{r.nature}</td>
-                <td style={{ ...td, whiteSpace: 'nowrap' }}>
-                  <div>
-                    {r.pos_weight}/{r.char_class}
-                    <span style={{ fontSize: 11, color: '#999' }}> · score={r.score}</span>
-                  </div>
-                  {r.meeting && (
-                    <div style={{ fontSize: 11, color: '#8b4513', marginTop: 2 }}>📌{r.meeting}</div>
-                  )}
-                  {(r.country || r.province || r.triangle) && (
-                    <div style={{ fontSize: 11, color: '#777', marginTop: 2 }}>
-                      {[r.country && `🌏${r.country}`, r.province && `📍${r.province}`, r.triangle && `△${r.triangle}`]
-                        .filter(Boolean)
-                        .join(' ')}
-                    </div>
-                  )}
+                <td style={td}>{r.pos_weight}</td>
+                <td style={td}>{r.char_class}</td>
+                <td style={{ ...td, fontWeight: 600, color: (r.score ?? 0) >= 60 ? '#8b4513' : '#888' }}>{r.score ?? '—'}</td>
+                <td style={{ ...td, fontSize: 11.5, color: '#8b4513' }}>{r.meeting || '—'}</td>
+                <td style={{ ...td, fontSize: 11.5, color: '#555' }}>
+                  {[r.country && `🌏${r.country}`, r.province && `📍${r.province}`, r.triangle && `△${r.triangle}`]
+                    .filter(Boolean)
+                    .join(' ') || '—'}
                 </td>
+                {(() => {
+                  const kw = (r.keywords || '').split(',').map((s: string) => s.trim())
+                  return (
+                    <>
+                      <td style={{ ...td, fontSize: 11.5, color: '#b8860b' }}>{kw[0] || '—'}</td>
+                      <td style={{ ...td, fontSize: 11.5, color: '#777' }}>{kw[1] || '—'}</td>
+                      <td style={{ ...td, fontSize: 11.5, color: '#777' }}>{kw[2] || '—'}</td>
+                    </>
+                  )
+                })()}
                 <td style={{ ...td, minWidth: 200, color: '#555' }}>{r.subtext || '—'}</td>
                 <td style={td}>{r.summary || '—'}</td>
               </tr>
