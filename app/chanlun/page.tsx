@@ -88,6 +88,20 @@ export default function ChanlunPage() {
       .finally(() => setEntityLoading(false))
   }, [selNode])
 
+  // 查关系证据链
+  const [relData, setRelData] = useState<any>(null)
+  const [relLoading, setRelLoading] = useState(false)
+  const queryRelation = (other: string) => {
+    if (!selNode) return
+    setRelLoading(true)
+    setRelData(null)
+    fetch(`/api/chanlun?path=relation&source=${encodeURIComponent(selNode)}&target=${encodeURIComponent(other)}`)
+      .then(r => r.json())
+      .then(d => setRelData(d))
+      .catch(() => setRelData({ error: '关系查询失败' }))
+      .finally(() => setRelLoading(false))
+  }
+
   const searchNode = () => {
     if (searchTerm.trim()) setSelNode(searchTerm.trim())
   }
@@ -161,15 +175,53 @@ export default function ChanlunPage() {
               {entityLoading && <p className="text-slate-500 text-sm">加载中…</p>}
               {entityData?.error && <p className="text-red-400 text-sm">{entityData.error}</p>}
               {entityData?.found === false && <p className="text-slate-500 text-sm">未找到「{entityData.query}」，试试 中枢/背驰/买卖点/走势终完美</p>}
-              {entityData?.found && entityData.chunks?.length === 0 && <p className="text-slate-500 text-sm">该节点暂无直接原文</p>}
-              {entityData?.chunks?.map((c: any, i: number) => (
-                <div key={i} className="rounded-lg bg-slate-800/60 border border-slate-700/50 p-3">
-                  <p className="text-sm text-slate-300 leading-relaxed">{c.text}</p>
-                  <p className="text-[11px] text-slate-500 mt-2">📄 {c.file}</p>
-                </div>
-              ))}
-              {entityData?.sources && entityData.sources.length > 0 && (
-                <p className="text-[11px] text-slate-500">来源: {entityData.sources.join(' · ')}</p>
+
+              {/* 实体概要 */}
+              {entityData?.found && (
+                <>
+                  <div className="rounded-lg bg-slate-800/40 border border-slate-700/40 p-3">
+                    <p className="text-sm text-slate-300">
+                      <span className="text-amber-400 font-semibold">{entityData.name}</span>
+                      <span className="text-slate-500"> · 关联 {entityData.degree} 个概念 · 共提及 {entityData.total_relation_mentions} 次</span>
+                    </p>
+                  </div>
+
+                  {/* 关系列表（按出现次数排序） */}
+                  <div className="space-y-1.5">
+                    {entityData.relations?.slice(0, 15).map((r: any, i: number) => (
+                      <button
+                        key={i}
+                        onClick={() => queryRelation(r.other)}
+                        className="w-full text-left rounded-lg bg-slate-800/60 border border-slate-700/50 px-3 py-2 hover:border-amber-500/60 hover:bg-slate-800 transition-colors"
+                      >
+                        <div className="flex items-center justify-between">
+                          <span className="text-sm text-slate-200">
+                            {r.direction === 'out' ? '→' : '←'} {r.other}
+                          </span>
+                          <span className="text-xs text-amber-400 font-mono">{r.weight}次</span>
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* 关系证据链 */}
+                  {relLoading && <p className="text-slate-500 text-sm animate-pulse">查关系证据…</p>}
+                  {relData?.found && (
+                    <div className="rounded-lg bg-slate-900/60 border border-amber-500/30 p-3 space-y-2">
+                      <p className="text-xs text-amber-400">
+                        {relData.source} —{relData.weight}次→ {relData.target}
+                        {relData.keywords && <span className="text-slate-500"> · {relData.keywords.split(',')[0]}</span>}
+                      </p>
+                      {relData.chunks?.map((c: any, j: number) => (
+                        <div key={j} className="border-l-2 border-slate-700 pl-2">
+                          <p className="text-xs text-slate-400 leading-relaxed">{c.text}</p>
+                          <p className="text-[10px] text-slate-600 mt-1">📄 {c.file}</p>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {relData?.found === false && <p className="text-slate-500 text-sm">{relData.note || '无直接关系'}</p>}
+                </>
               )}
             </div>
           </div>
