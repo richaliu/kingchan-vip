@@ -27,6 +27,7 @@ export default function CctvPage() {
   const [months, setMonths] = useState<{ month: string; cnt: number }[]>([])
   const [year, setYear] = useState('')
   const [monthMode, setMonthMode] = useState('') // ''=全年, 'YYYYMM'=单月
+  const [yearPage, setYearPage] = useState(0) // 年份九宫格翻页（每页4年）
   const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(false)
   const [err, setErr] = useState('')
@@ -43,6 +44,15 @@ export default function CctvPage() {
     if (!year) return []
     return months.filter((m: { month: string; cnt: number }) => m.month.startsWith(year)).sort()
   }, [months, year])
+
+  // 年份九宫格：每页4年
+  const yearPageYears = useMemo(() => {
+    if (!years.length) return []
+    const start = yearPage * 4
+    return years.slice(start, start + 4)
+  }, [years, yearPage])
+
+  const yearPageMax = useMemo(() => Math.max(0, Math.ceil(years.length / 4) - 1), [years])
 
   useEffect(() => {
     fetch('/api/cctv_labels?limit=1')
@@ -108,41 +118,102 @@ export default function CctvPage() {
         <span style={{ fontSize: 13, color: '#8b4513' }}>政策K线：谁发起 → 哪个领域 → 哪个方向 → 多还是空 → 潜台词</span>
       </div>
 
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 16, flexWrap: 'wrap' }}>
-        <label style={{ fontSize: 14 }}>年份</label>
-        <select
-          value={year}
-          onChange={(e) => {
-            setYear(e.target.value)
-            setMonthMode('')
-          }}
-          style={{ padding: '7px 12px', fontSize: 14, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
-        >
-          {years.map((y) => (
-            <option key={y} value={y}>
-              {y}
-            </option>
-          ))}
-        </select>
-        <label style={{ fontSize: 14 }}>月份</label>
-        <select
-          value={monthMode}
-          onChange={(e) => setMonthMode(e.target.value)}
-          style={{ padding: '7px 12px', fontSize: 14, border: '1px solid #ccc', borderRadius: 6, background: '#fff' }}
-        >
-          <option value="">全年</option>
-          {monthOptions.map((m) => (
-            <option key={m.month} value={m.month}>
-              {Number(m.month.slice(4))}月（{m.cnt}条）
-            </option>
-          ))}
-        </select>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 16 }}>
+        {/* 年份九宫格翻页 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            onClick={() => setYearPage((p) => Math.max(0, p - 1))}
+            disabled={yearPage === 0}
+            style={{ padding: '6px 12px', fontSize: 16, border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: yearPage === 0 ? 'not-allowed' : 'pointer', opacity: yearPage === 0 ? 0.4 : 1 }}
+          >
+            ‹
+          </button>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 8 }}>
+            {yearPageYears.map((y) => (
+              <button
+                key={y}
+                onClick={() => {
+                  setYear(y)
+                  setMonthMode('')
+                }}
+                style={{
+                  padding: '8px 18px',
+                  fontSize: 14,
+                  borderRadius: 6,
+                  border: `1px solid ${year === y ? '#8b4513' : '#e0d8c8'}`,
+                  background: year === y ? '#8b4513' : '#fdfbf6',
+                  color: year === y ? '#fff' : '#333',
+                  cursor: 'pointer',
+                  fontWeight: year === y ? 600 : 400,
+                }}
+              >
+                {y}
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setYearPage((p) => Math.min(yearPageMax, p + 1))}
+            disabled={yearPage >= yearPageMax}
+            style={{ padding: '6px 12px', fontSize: 16, border: '1px solid #ccc', borderRadius: 6, background: '#fff', cursor: yearPage >= yearPageMax ? 'not-allowed' : 'pointer', opacity: yearPage >= yearPageMax ? 0.4 : 1 }}
+          >
+            ›
+          </button>
+          <span style={{ fontSize: 13, color: '#888', marginLeft: 4 }}>
+            {yearPage * 4 + 1}-{Math.min(yearPage * 4 + 4, years.length)} / {years.length} 年
+          </span>
+        </div>
+
+        {/* 月份固定标签 1-12 + 全年 */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+          <span style={{ fontSize: 13, color: '#666' }}>月份</span>
+          <button
+            onClick={() => setMonthMode('')}
+            style={{
+              padding: '5px 12px',
+              fontSize: 13,
+              borderRadius: 20,
+              border: `1px solid ${monthMode === '' ? '#8b4513' : '#e0d8c8'}`,
+              background: monthMode === '' ? '#8b4513' : '#fdfbf6',
+              color: monthMode === '' ? '#fff' : '#333',
+              cursor: 'pointer',
+            }}
+          >
+            全年
+          </button>
+          {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map((m) => {
+            const mm = `${year}${String(m).padStart(2, '0')}`
+            const monthData = months.find((x) => x.month === mm)
+            const active = monthMode === mm
+            const hasData = !!monthData
+            return (
+              <button
+                key={m}
+                onClick={() => {
+                  if (!hasData) return
+                  setMonthMode(active ? '' : mm)
+                }}
+                title={monthData ? `${m}月（${monthData.cnt}条）` : `${m}月（无数据）`}
+                style={{
+                  padding: '5px 11px',
+                  fontSize: 13,
+                  borderRadius: 20,
+                  border: `1px solid ${active ? '#8b4513' : hasData ? '#d8cbb0' : '#eee'}`,
+                  background: active ? '#8b4513' : hasData ? '#fdfbf6' : '#f5f5f5',
+                  color: active ? '#fff' : hasData ? '#333' : '#bbb',
+                  cursor: hasData ? 'pointer' : 'not-allowed',
+                }}
+              >
+                {m}月{monthData ? `·${monthData.cnt}` : ''}
+              </button>
+            )
+          })}
+        </div>
         {loading && <span style={{ color: '#888', fontSize: 13 }}>加载中…</span>}
         {err && <span style={{ color: '#c00', fontSize: 13 }}>⚠️ {err}</span>}
         {(filters.line || filters.bull) && (
           <button
             onClick={() => setFilters({})}
-            style={{ marginLeft: 4, padding: '5px 12px', fontSize: 13, border: '1px solid #c00', borderRadius: 6, background: '#fff', color: '#c00', cursor: 'pointer' }}
+            style={{ alignSelf: 'flex-start', padding: '5px 12px', fontSize: 13, border: '1px solid #c00', borderRadius: 6, background: '#fff', color: '#c00', cursor: 'pointer' }}
           >
             清除筛选 ✕
           </button>
